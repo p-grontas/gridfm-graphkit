@@ -74,7 +74,7 @@ class FeatureEncoder(torch.nn.Module):
             # Update dim_in to reflect the new dimension fo the node features
             self.dim_in = dim_inner
         if args.encoder.edge_encoder:
-            args.edge_dim
+            edge_dim = args.edge_dim
             enc_dim_edge = dim_inner
             # Encode integer edge features via nn.Embeddings
             self.edge_encoder = LinearEdgeEncoder(edge_dim, enc_dim_edge)
@@ -107,8 +107,8 @@ class GritTransformer(torch.nn.Module):
         self.encoder = FeatureEncoder(
                         dim_in, 
                         dim_inner,
-                        args.model.encoder
-                        )   # TODO add args
+                        args.model
+                        ) 
         dim_in = self.encoder.dim_in    
 
         if args.model.posenc_RRWP.enable:

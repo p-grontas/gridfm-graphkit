@@ -48,7 +48,7 @@ model:
     edge_encoder: True
     node_encoder_name: TODO
     node_encoder_bn: True
-    .edge_encoder_bn: True
+    edge_encoder_bn: True
   gt:
     layer_type: GritTransformer
     dim_hidden: 64  # `gt.dim_hidden` must match `gnn.dim_inner`
