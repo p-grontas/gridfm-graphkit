@@ -36,7 +36,7 @@ model:
   attention_head: 8
   dropout: 0.1
   edge_dim: 2
-  hidden_size: 123
+  hidden_size: 64 # `gt.dim_hidden` must match `gnn.dim_inner`
   input_dim: 9
   num_layers: 10
   output_dim: 6
