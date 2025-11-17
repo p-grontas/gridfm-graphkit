@@ -72,7 +72,7 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
         if act is None:
             self.act = nn.Identity()
         else:
-            self.act = act_dict[act]()
+            self.act = nn.ReLU()
 
         if self.edge_enhance:
             self.VeRow = nn.Parameter(torch.zeros(self.out_dim, self.num_heads, self.out_dim), requires_grad=True)
@@ -171,12 +171,15 @@ class GritTransformerLayer(nn.Module):
         self.bn_no_runner = cfg.attn.bn_no_runner
         self.rezero = getattr(cfg.attn, "rezero", False) 
 
-        self.act = act_dict[act]() if act is not None else nn.Identity()
-        if cfg.get("attn", None) is None:
+        if act is not None
+            self.act =  nn.ReLU() 
+        else:
+            self.act =  nn.Identity()
+
+        if getattr(cfg, "attn", None) is None:
             cfg.attn = dict()
-        self.use_attn = cfg.attn.get("use", True)
-        # self.sigmoid_deg = cfg.attn.get("sigmoid_deg", False)
-        self.deg_scaler = cfg.attn.get("deg_scaler", True)
+        self.use_attn = getattr(cfg.attn, "use", True)
+        self.deg_scaler = getattr(cfg.attn, "deg_scaler", True)
 
         self.attention = MultiHeadAttentionLayerGritSparse(
             in_dim=in_dim,
