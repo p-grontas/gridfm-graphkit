@@ -8,11 +8,12 @@ from torch_scatter import scatter, scatter_max, scatter_add
 
 import opt_einsum as oe
 
-
 import warnings
 
+
 def pyg_softmax(src, index, num_nodes=None):
-    r"""Computes a sparsely evaluated softmax.
+    """
+    Computes a sparsely evaluated softmax.
     Given a value tensor :attr:`src`, this function first groups the values
     along the first dimension based on the indices specified in :attr:`index`,
     and then proceeds to compute the softmax individually for each group.
@@ -23,7 +24,8 @@ def pyg_softmax(src, index, num_nodes=None):
         num_nodes (int, optional): The number of nodes, *i.e.*
             :obj:`max_val + 1` of :attr:`index`. (default: :obj:`None`)
 
-    :rtype: :class:`Tensor`
+    Returns: 
+        out (Tensor)
     """
 
     num_nodes = maybe_num_nodes(index, num_nodes)
@@ -39,7 +41,7 @@ def pyg_softmax(src, index, num_nodes=None):
 
 class MultiHeadAttentionLayerGritSparse(nn.Module):
     """
-        Proposed Attention Computation for GRIT
+    Attention Computation for GRIT
     """
 
     def __init__(self, in_dim, out_dim, num_heads, use_bias,
@@ -140,7 +142,7 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
 
 class GritTransformerLayer(nn.Module):
     """
-        Proposed Transformer Layer for GRIT
+    Transformer Layer for GRIT
     """
     def __init__(self, in_dim, out_dim, num_heads,
                  dropout=0.0,

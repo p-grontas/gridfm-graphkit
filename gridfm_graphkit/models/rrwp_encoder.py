@@ -51,10 +51,10 @@ def full_edge_index(edge_index, batch=None):
 
 class RRWPLinearNodeEncoder(torch.nn.Module):
     """
-        FC_1(RRWP) + FC_2 (Node-attr)
-        note: FC_2 is given by the Typedict encoder of node-attr in some cases
-        Parameters:
-        num_classes - the number of classes for the embedding mapping to learn
+    FC_1(RRWP) + FC_2 (Node-attr)
+    note: FC_2 is given by the Typedict encoder of node-attr in some cases
+    Parameters:
+    num_classes - the number of classes for the embedding mapping to learn
     """
     def __init__(self, emb_dim, out_dim, use_bias=False, batchnorm=False, layernorm=False, pe_name="rrwp"):
         super().__init__()
@@ -90,14 +90,14 @@ class RRWPLinearNodeEncoder(torch.nn.Module):
 
 
 class RRWPLinearEdgeEncoder(torch.nn.Module):
-    '''
-        Merge RRWP with given edge-attr and Zero-padding to all pairs of node
-        FC_1(RRWP) + FC_2(edge-attr)
-        - FC_2 given by the TypedictEncoder in same cases
-        - Zero-padding for non-existing edges in fully-connected graph
-        - (optional) add node-attr as the E_{i,i}'s attr
-            note: assuming  node-attr and edge-attr is with the same dimension after Encoders
-    '''
+    """
+    Merge RRWP with given edge-attr and Zero-padding to all pairs of node
+    FC_1(RRWP) + FC_2(edge-attr)
+    - FC_2 given by the TypedictEncoder in same cases
+    - Zero-padding for non-existing edges in fully-connected graph
+    - (optional) add node-attr as the E_{i,i}'s attr
+        note: assuming  node-attr and edge-attr is with the same dimension after Encoders
+    """
     def __init__(self, emb_dim, out_dim, batchnorm=False, layernorm=False, use_bias=False,
                  pad_to_full_graph=True, fill_value=0.,
                  add_node_attr_as_self_loop=False,
@@ -143,10 +143,7 @@ class RRWPLinearEdgeEncoder(torch.nn.Module):
         if self.overwrite_old_attr:
             out_idx, out_val = rrwp_idx, rrwp_val
         else:
-            # edge_index, edge_attr = add_remaining_self_loops(edge_index, edge_attr, num_nodes=batch.num_nodes, fill_value=0.)
             edge_index, edge_attr = add_self_loops(edge_index, edge_attr, num_nodes=batch.num_nodes, fill_value=0.)
-            # print('xxxx', edge_attr.size(), rrwp_val.size())
-            # print('yyyy', edge_index.size(), rrwp_idx.size())
             out_idx, out_val = torch_sparse.coalesce(
                 torch.cat([edge_index, rrwp_idx], dim=1),
                 torch.cat([edge_attr, rrwp_val], dim=0),

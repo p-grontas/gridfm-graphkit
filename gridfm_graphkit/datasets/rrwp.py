@@ -1,20 +1,7 @@
-# ------------------------ : new rwpse ----------------
-from typing import Union, Any, Optional
-import numpy as np
+from typing import Any, Optional
 import torch
 import torch.nn.functional as F
-import torch_geometric as pyg
-from torch_geometric.data import Data, HeteroData
-from torch_geometric.transforms import BaseTransform
-from torch_scatter import scatter, scatter_add, scatter_max
-
-
-from torch_geometric.utils import (
-    get_laplacian,
-    get_self_loop_attr,
-    to_scipy_sparse_matrix,
-)
-import torch_sparse
+from torch_geometric.data import Data
 from torch_sparse import SparseTensor
 
 
@@ -42,8 +29,6 @@ def add_full_rrwp(data,
                   spd=False,
                   **kwargs
                   ):
-    device=data.edge_index.device
-    ind_vec = torch.eye(walk_length, dtype=torch.float, device=device)
     num_nodes = data.num_nodes
     edge_index, edge_weight = data.edge_index, data.edge_weight
 

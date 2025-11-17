@@ -12,7 +12,8 @@ class BatchNorm1dNode(torch.nn.Module):
 
     Args:
         dim_in (int): BatchNorm input dimension.
-        TODO fill in comments
+        eps (float): BatchNorm eps.
+        momentum (float): BatchNorm momentum.
     """
     def __init__(self, dim_in, eps, momentum):
         super().__init__()
@@ -88,7 +89,7 @@ class FeatureEncoder(torch.nn.Module):
     
 class GraphHead(nn.Module):
     """
-    Prediction head for graph prediction tasks.
+    Prediction head for decoding tasks.
     Args:
         dim_in (int): Input dimension.
         dim_out (int): Output dimension. For binary prediction, dim_out=1.
@@ -97,34 +98,18 @@ class GraphHead(nn.Module):
 
     def __init__(self, dim_in, dim_out):
         super().__init__()
-        # self.deg_scaler = False
-        # self.fwl = False
 
-        # list_FC_layers = [
-        #     nn.Linear(dim_in // 2 ** l, dim_in // 2 ** (l + 1), bias=True)
-        #     for l in range(L)]
-        # list_FC_layers.append(
-        #     nn.Linear(dim_in // 2 ** L, dim_out, bias=True))
         self.FC_layers =  nn.Sequential(
             nn.Linear(dim_in, dim_in),
             nn.LeakyReLU(),
             nn.Linear(dim_in, dim_out),
-        )   #nn.ModuleList(list_FC_layers)
-        # self.L = L
-        # self.activation = register.act_dict[cfg.gnn.act]()
-        # note: modified to add () in the end from original code of 'GPS'
-        #   potentially due to the change of PyG/GraphGym version
+        )  
 
     def _apply_index(self, batch):
         return batch.graph_feature, batch.y
 
     def forward(self, batch):
-        # graph_emb = self.pooling_fun(batch.x, batch.batch)
         graph_emb = self.FC_layers(batch.x)
-        # for l in range(self.L):
-        #     graph_emb = self.FC_layers[l](graph_emb)
-        #     graph_emb = self.activation(graph_emb)
-        # graph_emb = self.FC_layers[self.L](graph_emb)
         batch.graph_feature = graph_emb
         pred, label = self._apply_index(batch)
         return pred
@@ -132,9 +117,12 @@ class GraphHead(nn.Module):
 
 @MODELS_REGISTRY.register("GRIT")
 class GritTransformer(torch.nn.Module):
-    '''
-        The proposed GritTransformer (Graph Inductive Bias Transformer)
-    '''
+    """
+    The GritTransformer (Graph Inductive Bias Transformer) from
+    Graph Inductive Biases in Transformers without Message Passing, L. Ma et al.,
+    2023.
+
+    """
     def __init__(self, args):
         super().__init__()
 
@@ -204,20 +192,19 @@ class GritTransformer(torch.nn.Module):
 
         self.layers = nn.Sequential(*layers)
 
-        # self.decoder = nn.Sequential(
-        #     nn.Linear(dim_inner, dim_inner),
-        #     nn.LeakyReLU(),
-        #     nn.Linear(dim_inner, dim_out),
-        # )
-
         self.decoder = GraphHead(dim_inner, dim_out)
 
-    def forward(self, batch):   # self, x, pe, edge_index, edge_attr, batch # gps parameters
-        #print('process--->>', batch)    # TODO remove print
+    def forward(self, batch):   
+        """
+        Forward pass for GRIT.
+
+        Args:
+            batch (Batch): Pytorch Geometric Batch object, with x, y encodings, etc.
+
+        Returns:
+            output (Tensor): Output node features of shape [num_nodes, output_dim].
+        """
         for module in self.children():
-            # print('----------')
-            # print(module)
             batch = module(batch)
-            # print('--passed--')
 
         return batch

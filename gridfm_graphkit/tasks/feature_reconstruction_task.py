@@ -111,13 +111,6 @@ class FeatureReconstructionTask(L.LightningModule):
 
     def shared_step(self, batch):
         output = self.forward(
-            # TODO update args list in the GPS Transf. for consistency
-            # x=batch.x,
-            # pe=batch.pe,
-            # edge_index=batch.edge_index,
-            # edge_attr=batch.edge_attr,
-            # batch=batch.batch,
-            # mask=batch.mask,
             batch
         )
 
