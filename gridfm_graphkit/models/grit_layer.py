@@ -185,31 +185,31 @@ class GritTransformerLayer(nn.Module):
             in_dim=in_dim,
             out_dim=out_dim // num_heads,
             num_heads=num_heads,
-            use_bias=cfg.attn.get("use_bias", False),
+            use_bias=getattr(cfg.attn, "use_bias", False),
             dropout=attn_dropout,
-            clamp=cfg.attn.get("clamp", 5.),
-            act=cfg.attn.get("act", "relu"),
-            edge_enhance=cfg.attn.get("edge_enhance", True),
-            sqrt_relu=cfg.attn.get("sqrt_relu", False),
-            signed_sqrt=cfg.attn.get("signed_sqrt", False),
-            scaled_attn =cfg.attn.get("scaled_attn", False),
-            no_qk=cfg.attn.get("no_qk", False),
+            clamp=getattr(cfg.attn, "clamp", 5.),
+            act=getattr(cfg.attn, "act", "relu"),
+            edge_enhance=getattr(cfg.attn, "edge_enhance", True),
+            sqrt_relu=getattr(cfg.attn, "sqrt_relu", False),
+            signed_sqrt=getattr(cfg.attn, "signed_sqrt", False),
+            scaled_attn =getattr(cfg.attn,"scaled_attn", False),
+            no_qk=getattr(cfg.attn, "no_qk", False),
         )
 
-        if cfg.attn.get('graphormer_attn', False):
+        if getattr(cfg.attn, 'graphormer_attn', False):
             self.attention = MultiHeadAttentionLayerGraphormerSparse(
                 in_dim=in_dim,
                 out_dim=out_dim // num_heads,
                 num_heads=num_heads,
-                use_bias=cfg.attn.get("use_bias", False),
+                use_bias=getattr(cfg.attn, "use_bias", False),
                 dropout=attn_dropout,
-                clamp=cfg.attn.get("clamp", 5.),
-                act=cfg.attn.get("act", "relu"),
+                clamp=getattr(cfg.attn, "clamp", 5.),
+                act=getattr(cfg.attn, "act", "relu"),
                 edge_enhance=True,
-                sqrt_relu=cfg.attn.get("sqrt_relu", False),
-                signed_sqrt=cfg.attn.get("signed_sqrt", False),
-                scaled_attn =cfg.attn.get("scaled_attn", False),
-                no_qk=cfg.attn.get("no_qk", False),
+                sqrt_relu=getattr(cfg.attn, "sqrt_relu", False),
+                signed_sqrt=getattr(cfg.attn, "signed_sqrt", False),
+                scaled_attn =getattr(cfg.attn, "scaled_attn", False),
+                no_qk=getattr(cfg.attn, "no_qk", False),
             )
 
 
@@ -232,8 +232,8 @@ class GritTransformerLayer(nn.Module):
 
         if self.batch_norm:
             # when the batch_size is really small, use smaller momentum to avoid bad mini-batch leading to extremely bad val/test loss (NaN)
-            self.batch_norm1_h = nn.BatchNorm1d(out_dim, track_running_stats=not self.bn_no_runner, eps=1e-5, momentum=cfg.bn_momentum)
-            self.batch_norm1_e = nn.BatchNorm1d(out_dim, track_running_stats=not self.bn_no_runner, eps=1e-5, momentum=cfg.bn_momentum) if norm_e else nn.Identity()
+            self.batch_norm1_h = nn.BatchNorm1d(out_dim, track_running_stats=not self.bn_no_runner, eps=1e-5, momentum=cfg.attn.bn_momentum)
+            self.batch_norm1_e = nn.BatchNorm1d(out_dim, track_running_stats=not self.bn_no_runner, eps=1e-5, momentum=cfg.attn.bn_momentum) if norm_e else nn.Identity()
 
         # FFN for h
         self.FFN_h_layer1 = nn.Linear(out_dim, out_dim * 2)
@@ -243,7 +243,7 @@ class GritTransformerLayer(nn.Module):
             self.layer_norm2_h = nn.LayerNorm(out_dim)
 
         if self.batch_norm:
-            self.batch_norm2_h = nn.BatchNorm1d(out_dim, track_running_stats=not self.bn_no_runner, eps=1e-5, momentum=cfg.bn_momentum)
+            self.batch_norm2_h = nn.BatchNorm1d(out_dim, track_running_stats=not self.bn_no_runner, eps=1e-5, momentum=cfg.attn.bn_momentum)
 
         if self.rezero:
             self.alpha1_h = nn.Parameter(torch.zeros(1,1))
