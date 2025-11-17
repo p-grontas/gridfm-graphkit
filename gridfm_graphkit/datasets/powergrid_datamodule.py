@@ -135,7 +135,7 @@ class LitGridDataModule(L.LightningDataModule):
                 transform=get_transform(args=self.args),
             )
 
-            if self.args.data.posenc_RRWP.enable:
+            if ('posenc_RRWP' in self.args.data) and self.args.data.posenc_RRWP.enable:
                 pe_transform = ComputePosencStat(pe_types=['RRWP'],
                                                 cfg=self.args.data
                                                 )

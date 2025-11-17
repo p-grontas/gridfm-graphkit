@@ -25,7 +25,7 @@ data:
   - 50000
   test_ratio: 0.1
   val_ratio: 0.1
-  workers: 8
+  workers: 0
   posenc_RRWP:  # TODO maybe better with data section...
     enable: True
     ksteps: 21

@@ -74,7 +74,7 @@ class GNN_TransformerConv(nn.Module):
                 requires_grad=False,
             )
 
-    def forward(self, x, pe, edge_index, edge_attr, batch):
+    def forward(self, data_batch):
         """
         Forward pass for the GPSTransformer.
 
@@ -88,6 +88,12 @@ class GNN_TransformerConv(nn.Module):
         Returns:
             output (Tensor): Output node features of shape [num_nodes, output_dim].
         """
+        x=data_batch.x
+        pe=data_batch.pe
+        edge_index=data_batch.edge_index
+        edge_attr=data_batch.edge_attr
+        batch=data_batch.batch
+
         for conv in self.layers:
             x = conv(x, edge_index, edge_attr)
             x = nn.LeakyReLU()(x)
