@@ -171,7 +171,7 @@ class GritTransformerLayer(nn.Module):
         self.bn_no_runner = cfg.attn.bn_no_runner
         self.rezero = getattr(cfg.attn, "rezero", False) 
 
-        if act is not None
+        if act is not None:
             self.act =  nn.ReLU() 
         else:
             self.act =  nn.Identity()
