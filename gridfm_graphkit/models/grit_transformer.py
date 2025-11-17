@@ -1,15 +1,29 @@
 from gridfm_graphkit.io.registries import MODELS_REGISTRY
-from torch import nn
 import torch
-
+from torch import nn
 from rrwp_encoder import RRWPLinearNodeEncoder, RRWPLinearEdgeEncoder
 from grit_layer import GritTransformerLayer
 
-# TODO verify use
-from torch_geometric.graphgym.models.gnn import GNNPreMP
-from torch_geometric.graphgym.models.layer import (new_layer_config,
-                                                   BatchNorm1dNode)
-from torch_geometric.graphgym.models.layer import new_layer_config, MLP
+
+
+class BatchNorm1dNode(torch.nn.Module):
+    r"""A batch normalization layer for node-level features.
+
+    Args:
+        dim_in (int): BatchNorm input dimension.
+        TODO fill in comments
+    """
+    def __init__(self, dim_in, eps, momentum):
+        super().__init__()
+        self.bn = torch.nn.BatchNorm1d(
+            dim_in,
+            eps=eps,
+            momentum=momentum,
+        )
+
+    def forward(self, batch):
+        batch.x = self.bn(batch.x)
+        return batch
 
 
 class LinearNodeEncoder(torch.nn.Module):
@@ -59,23 +73,16 @@ class FeatureEncoder(torch.nn.Module):
             # Encode integer node features via nn.Embeddings
             self.node_encoder = LinearNodeEncoder(dim_inner)
             if args.node_encoder_bn:
-                self.node_encoder_bn = BatchNorm1dNode(
-                    new_layer_config(dim_inner, -1, -1, has_act=False,
-                                     has_bias=False, cfg=cfg))
+                self.node_encoder_bn = BatchNorm1dNode(dim_inner, 1e-5, 0.1)
             # Update dim_in to reflect the new dimension fo the node features
             self.dim_in = dim_inner
         if args.edge_encoder:
-            # Hard-limit max edge dim for PNA.
-            if 'PNA' in args.model.gt.layer_type:   # TODO remove condition if PNA not needed
-                dim_edge = min(128, dim_inner)
-            else:
-                dim_edge = dim_inner
+
+            dim_edge = dim_inner
             # Encode integer edge features via nn.Embeddings
             self.edge_encoder = LinearEdgeEncoder(dim_edge)
             if cfg.dataset.edge_encoder_bn:
-                self.edge_encoder_bn = BatchNorm1dNode(
-                    new_layer_config(dim_edge, -1, -1, has_act=False,
-                                     has_bias=False, cfg=cfg))
+                self.edge_encoder_bn = BatchNorm1dNode(dim_edge, 1e-5, 0.1)
 
     def forward(self, batch):
         for module in self.children():
@@ -107,7 +114,6 @@ class GritTransformer(torch.nn.Module):
                         )   # TODO add args
         dim_in = self.encoder.dim_in    
 
-
         if args.model.posenc_RRWP.enable:
 
             self.rrwp_abs_encoder = RRWPLinearNodeEncoder(
@@ -122,12 +128,6 @@ class GritTransformer(torch.nn.Module):
                 add_node_attr_as_self_loop=False,
                 fill_value=0.
                 )
-
-
-        if args.model.layers_pre_mp > 0:
-            self.pre_mp = GNNPreMP(
-                dim_in, dim_inner, args.model.layers_pre_mp)
-            dim_in = dim_inner
 
         assert args.model.hidden_size == dim_inner == dim_in, \
             "The inner and hidden dims must match."

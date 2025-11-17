@@ -6,8 +6,6 @@ import torch_geometric as pyg
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 from torch_scatter import scatter, scatter_max, scatter_add
 
-from grit.utils import negate_edge_index
-from torch_geometric.graphgym.register import *
 import opt_einsum as oe
 
 from yacs.config import CfgNode as CN
@@ -141,7 +139,6 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
         return h_out, e_out
 
 
-@register_layer("GritTransformer")
 class GritTransformerLayer(nn.Module):
     """
         Proposed Transformer Layer for GRIT

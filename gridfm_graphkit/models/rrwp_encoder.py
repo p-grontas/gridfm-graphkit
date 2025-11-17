@@ -1,17 +1,10 @@
-'''
+"""
     The RRWP encoder for GRIT (ours)
-'''
+"""
 import torch
 from torch import nn
 from torch.nn import functional as F
-from ogb.utils.features import get_bond_feature_dims
 import torch_sparse
-
-import torch_geometric as pyg
-from torch_geometric.graphgym.register import (
-    register_edge_encoder,
-    register_node_encoder,
-)
 
 from torch_geometric.utils import remove_self_loops, add_remaining_self_loops, add_self_loops
 from torch_scatter import scatter
@@ -19,7 +12,7 @@ import warnings
 
 def full_edge_index(edge_index, batch=None):
     """
-    Retunr the Full batched sparse adjacency matrices given by edge indices.
+    Return the Full batched sparse adjacency matrices given by edge indices.
     Returns batched sparse adjacency matrices with exactly those edges that
     are not in the input `edge_index` while ignoring self-loops.
     Implementation inspired by `torch_geometric.utils.to_dense_adj`
@@ -152,7 +145,6 @@ class RRWPLinearEdgeEncoder(torch.nn.Module):
             # edge_index, edge_attr = add_remaining_self_loops(edge_index, edge_attr, num_nodes=batch.num_nodes, fill_value=0.)
             edge_index, edge_attr = add_self_loops(edge_index, edge_attr, num_nodes=batch.num_nodes, fill_value=0.)
 
-            #print('-->>>>', edge_attr.size(), rrwp_val.size())
             out_idx, out_val = torch_sparse.coalesce(
                 torch.cat([edge_index, rrwp_idx], dim=1),
                 torch.cat([edge_attr, rrwp_val], dim=0),
