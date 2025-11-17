@@ -5,6 +5,7 @@ from pytorch_lightning.utilities import rank_zero_only
 import numpy as np
 import os
 import pandas as pd
+import copy
 
 from lightning.pytorch.loggers import MLFlowLogger
 from gridfm_graphkit.io.param_handler import load_model, get_loss_function
@@ -162,7 +163,7 @@ class FeatureReconstructionTask(L.LightningModule):
         return loss_dict["loss"]
 
     def test_step(self, batch, batch_idx, dataloader_idx=0):
-        output, loss_dict = self.shared_step(batch)
+        output, loss_dict = self.shared_step(copy.deepcopy(batch))
 
         dataset_name = self.args.data.networks[dataloader_idx]
 
