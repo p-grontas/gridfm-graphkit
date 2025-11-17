@@ -1,8 +1,9 @@
 from gridfm_graphkit.io.registries import MODELS_REGISTRY
 import torch
 from torch import nn
-from rrwp_encoder import RRWPLinearNodeEncoder, RRWPLinearEdgeEncoder
-from grit_layer import GritTransformerLayer
+
+from gridfm_graphkit.models.rrwp_encoder import RRWPLinearNodeEncoder, RRWPLinearEdgeEncoder
+from gridfm_graphkit.models.grit_layer import GritTransformerLayer
 
 
 
@@ -27,25 +28,21 @@ class BatchNorm1dNode(torch.nn.Module):
 
 
 class LinearNodeEncoder(torch.nn.Module):
-    def __init__(self, emb_dim):
+    def __init__(self, dim_in, emb_dim):
         super().__init__()
 
-        self.encoder = torch.nn.Linear(cfg.share.dim_in, emb_dim)
+        self.encoder = torch.nn.Linear(dim_in, emb_dim)
 
     def forward(self, batch):
         batch.x = self.encoder(batch.x)
         return batch
     
 class LinearEdgeEncoder(torch.nn.Module):
-    def __init__(self, emb_dim):
+    def __init__(self, edge_dim, emb_dim):
         super().__init__()
-        if cfg.dataset.name in ['MNIST', 'CIFAR10']:
-            self.in_dim = 1
-        elif cfg.dataset.name.startswith('attributed_triangle-'):
-            self.in_dim = 2
-        else:
-            raise ValueError("Input edge feature dim is required to be hardset "
-                             "or refactored to use a cfg option.")
+
+        self.in_dim = edge_dim
+
         self.encoder = torch.nn.Linear(self.in_dim, emb_dim)
 
     def forward(self, batch):
@@ -69,20 +66,20 @@ class FeatureEncoder(torch.nn.Module):
                 ):
         super(FeatureEncoder, self).__init__()
         self.dim_in = dim_in
-        if args.node_encoder:
+        if args.encoder.node_encoder:
             # Encode integer node features via nn.Embeddings
-            self.node_encoder = LinearNodeEncoder(dim_inner)
-            if args.node_encoder_bn:
+            self.node_encoder = LinearNodeEncoder(self.dim_in, dim_inner)
+            if args.encoder.node_encoder_bn:
                 self.node_encoder_bn = BatchNorm1dNode(dim_inner, 1e-5, 0.1)
             # Update dim_in to reflect the new dimension fo the node features
             self.dim_in = dim_inner
-        if args.edge_encoder:
-
-            dim_edge = dim_inner
+        if args.encoder.edge_encoder:
+            args.edge_dim
+            enc_dim_edge = dim_inner
             # Encode integer edge features via nn.Embeddings
-            self.edge_encoder = LinearEdgeEncoder(dim_edge)
-            if cfg.dataset.edge_encoder_bn:
-                self.edge_encoder_bn = BatchNorm1dNode(dim_edge, 1e-5, 0.1)
+            self.edge_encoder = LinearEdgeEncoder(edge_dim, enc_dim_edge)
+            if args.encoder.edge_encoder_bn:
+                self.edge_encoder_bn = BatchNorm1dNode(enc_dim_edge, 1e-5, 0.1)
 
     def forward(self, batch):
         for module in self.children():
@@ -121,7 +118,7 @@ class GritTransformer(torch.nn.Module):
                     dim_inner
                     )
             rel_pe_dim = args.model.posenc_RRWP.ksteps
-            self.rrwp_rel_encoder = RRWPLinearNodeEncoder(
+            self.rrwp_rel_encoder = RRWPLinearEdgeEncoder(
                 rel_pe_dim, 
                 dim_edge,
                 pad_to_full_graph=args.model.gt.attn.full_attn,
@@ -158,6 +155,7 @@ class GritTransformer(torch.nn.Module):
         )
 
     def forward(self, batch):
+        print('process--->>', batch)    # TODO remove print
         for module in self.children():
             batch = module(batch)
 

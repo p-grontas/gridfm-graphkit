@@ -8,7 +8,6 @@ from torch_geometric.data import Data, HeteroData
 from torch_geometric.transforms import BaseTransform
 from torch_scatter import scatter, scatter_add, scatter_max
 
-from torch_geometric.graphgym.config import cfg
 
 from torch_geometric.utils import (
     get_laplacian,

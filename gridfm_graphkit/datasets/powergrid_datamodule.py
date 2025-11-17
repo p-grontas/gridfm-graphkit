@@ -13,6 +13,8 @@ from gridfm_graphkit.datasets.powergrid_dataset import GridDatasetDisk
 
 from gridfm_graphkit.datasets.posenc_stats import ComputePosencStat
 
+import torch_geometric.transforms as T
+
 import numpy as np
 import random
 import warnings

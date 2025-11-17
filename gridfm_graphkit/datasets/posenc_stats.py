@@ -16,7 +16,8 @@ from torch_geometric.data import Data
 
 def compute_posenc_stats(data, pe_types, cfg):
     """Precompute positional encodings for the given graph.
-    Supported PE statistics to precompute, selected by `pe_types`:
+    Supported PE statistics to precompute in original implementation, 
+    selected by `pe_types`:
     'LapPE': Laplacian eigen-decomposition.
     'RWSE': Random walk landing probabilities (diagonals of RW matrices).
     'HKfullPE': Full heat kernels and their diagonals. (NOT IMPLEMENTED)

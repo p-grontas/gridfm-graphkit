@@ -8,7 +8,6 @@ from torch_scatter import scatter, scatter_max, scatter_add
 
 import opt_einsum as oe
 
-from yacs.config import CfgNode as CN
 
 import warnings
 
@@ -48,7 +47,7 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
                  edge_enhance=True,
                  sqrt_relu=False,
                  signed_sqrt=True,
-                 cfg=CN(),
+                 cfg={},
                  **kwargs):
         super().__init__()
 
