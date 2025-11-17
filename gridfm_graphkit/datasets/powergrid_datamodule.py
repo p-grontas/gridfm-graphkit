@@ -134,9 +134,8 @@ class LitGridDataModule(L.LightningDataModule):
             )
 
             if self.args.data.posenc_RRWP.enable:
-                pe_transform = ComputePosencStat(pe_types=pe_enabled_list,  # TODO connect arguments
-                                                is_undirected=is_undirected,
-                                                cfg=cfg
+                pe_transform = ComputePosencStat(pe_types=['RRWP'],
+                                                cfg=self.args.data
                                                 )
                 if dataset.transform is None:
                     dataset.transform = pe_transform
