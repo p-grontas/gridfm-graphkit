@@ -77,6 +77,8 @@ class FeatureReconstructionTask(L.LightningModule):
 
     def forward(self, batch):
         if batch.mask is not None:
+            # print('xxxx',batch.x.min(), batch.x.max())
+            # print('yyyyy',batch.y.min(), batch.y.max())
             mask_value_expanded = self.model.mask_value.expand(batch.x.shape[0], -1)
             batch.x[:, : batch.mask.shape[1]][batch.mask] = mask_value_expanded[batch.mask]
         return self.model(batch)

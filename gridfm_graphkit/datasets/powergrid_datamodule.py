@@ -143,6 +143,14 @@ class LitGridDataModule(L.LightningDataModule):
                     dataset.transform = pe_transform
                 else:
                     dataset.transform = T.Compose([pe_transform, dataset.transform])
+            if ('posenc_RWSE' in self.args.data) and self.args.data.posenc_RWSE.enable:
+                pe_transform = ComputePosencStat(pe_types=['RWSE'],
+                                                cfg=self.args.data
+                                                )
+                if dataset.transform is None:
+                    dataset.transform = pe_transform
+                else:
+                    dataset.transform = T.Compose([pe_transform, dataset.transform])
 
             self.datasets.append(dataset)
 

@@ -18,20 +18,24 @@ data:
   normalization: baseMVAnorm
   scenarios:
   # - 5000
-  - 50000
-  - 50000
-  - 30000
-  - 50000
-  - 50000
+  - 5000
+  - 5000
+  - 3000
+  - 5000
+  - 5000
   test_ratio: 0.1
   val_ratio: 0.1
   workers: 0
-  posenc_RRWP:  # TODO maybe better with data section...
-    enable: True
+  posenc_RRWP: 
+    enable: False
     ksteps: 21
     add_identity: True
     add_node_attr: False
     add_inverse: False
+  posenc_RWSE:  # TODO verify functionality
+    enable: True
+    kernel: 
+      times: 21
 model:
   attention_head: 8
   dropout: 0.1
