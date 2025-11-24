@@ -25,7 +25,7 @@ data:
   - 5000
   test_ratio: 0.1
   val_ratio: 0.1
-  workers: 0
+  workers: 4
   posenc_RRWP: 
     enable: False
     ksteps: 21
@@ -33,11 +33,9 @@ data:
     add_node_attr: False
     add_inverse: False
   posenc_RWSE:
-    enable: True
-    kernel: 
-      times: 21
-    pe_dim: 20  # TODO unify with model.pe_dim
-    raw_norm_type: batchnorm
+      enable: True
+      kernel: 
+        times: 21 # TODO unify with model
 model:
   attention_head: 8
   dropout: 0.1
@@ -55,6 +53,11 @@ model:
     node_encoder_name: RWSE
     node_encoder_bn: True
     edge_encoder_bn: True
+    posenc_RWSE:
+      kernel: 
+        times: 21
+      pe_dim: 20  # TODO unify with model.pe_dim
+      raw_norm_type: batchnorm
   gt:
     layer_type: GritTransformer
     dim_hidden: 116  # `gt.dim_hidden` must match `gnn.dim_inner`

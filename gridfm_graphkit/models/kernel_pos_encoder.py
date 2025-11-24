@@ -29,8 +29,8 @@ class KernelPENodeEncoder(torch.nn.Module):
                              f"preconfigured by setting 'kernel_type' class"
                              f"variable before calling the constructor.")
 
-        dim_pe = pecfg.dim_pe  # Size of the kernel-based PE embedding
-        num_rw_steps = len(pecfg.kernel.times)
+        dim_pe = pecfg.pe_dim  # Size of the kernel-based PE embedding
+        num_rw_steps = pecfg.kernel.times
         norm_type = pecfg.raw_norm_type.lower()  # Raw PE normalization layer type
         # self.pass_as_var = pecfg.pass_as_var  # Pass PE also as a separate variable
 

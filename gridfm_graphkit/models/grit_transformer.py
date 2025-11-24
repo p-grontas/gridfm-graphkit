@@ -69,8 +69,8 @@ class FeatureEncoder(torch.nn.Module):
         self.dim_in = dim_in
         if args.encoder.node_encoder:
             # Encode integer node features via nn.Embeddings
-            if 'RWSE' in self.node_encoder_name:
-                self.node_encoder = RWSENodeEncoder(self.dim_in, dim_inner, args.posenc_RWSE)
+            if 'RWSE' in args.encoder.node_encoder_name:
+                self.node_encoder = RWSENodeEncoder(self.dim_in, dim_inner, args.encoder.posenc_RWSE)
             else:
                 self.node_encoder = LinearNodeEncoder(self.dim_in, dim_inner)
             if args.encoder.node_encoder_bn:
