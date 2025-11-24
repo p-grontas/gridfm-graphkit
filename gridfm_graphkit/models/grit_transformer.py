@@ -4,7 +4,7 @@ from torch import nn
 
 from gridfm_graphkit.models.rrwp_encoder import RRWPLinearNodeEncoder, RRWPLinearEdgeEncoder
 from gridfm_graphkit.models.grit_layer import GritTransformerLayer
-
+from gridfm_graphkit.models.kernel_pos_encoder import RWSENodeEncoder
 
 
 class BatchNorm1dNode(torch.nn.Module):
@@ -70,7 +70,7 @@ class FeatureEncoder(torch.nn.Module):
         if args.encoder.node_encoder:
             # Encode integer node features via nn.Embeddings
             if 'RWSE' in self.node_encoder_name:
-                self.node_encoder = RWSENodeEncoder(self.dim_in, dim_inner)
+                self.node_encoder = RWSENodeEncoder(self.dim_in, dim_inner, args.posenc_RWSE)
             else:
                 self.node_encoder = LinearNodeEncoder(self.dim_in, dim_inner)
             if args.encoder.node_encoder_bn:
