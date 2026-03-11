@@ -57,6 +57,8 @@ class ReconstructionTask(BaseTask):
             batch.edge_attr_dict,
             batch.mask_dict,
             model=self.model,
+            x_dict=batch.x_dict,
+            batch_dict=batch.batch_dict,
         )
         return output, loss_dict
 
