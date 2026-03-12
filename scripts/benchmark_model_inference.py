@@ -4,7 +4,11 @@
 """
 A unified script for benchmarking and limited custom profiling. Benchmarking columns in the output csv are [batch_size,avg_time_per_sample_ms].
 
-Example usagef (edge count is 2*E (branch count)):
+Supports two model types via --model flag:
+  - "hetero" (default): GNS_heterogeneous with HeteroData (bus + gen nodes)
+  - "grit": GritTransformer with homogeneous Data (single node type)
+
+Example usage — Heterogeneous GNS (edge count is 2*E (branch count)):
 
 ######################################
 
@@ -12,11 +16,17 @@ CONF_PATH=../examples/config
 OUT_DIR=../scripts
 mkdir $OUT_DIR
 
-python benchmark_model_inference.py --config $CONF_PATH/case30_ieee_base.yaml --num_nodes 30 --num_edges 82 --num_gens 6 --iterations 20 --output_csv $OUT_DIR/case30.csv || true
-python benchmark_model_inference.py --config $CONF_PATH/case57_ieee_base.yaml --num_nodes 57 --num_edges 160 --num_gens 7 --iterations 20 --output_csv $OUT_DIR/case57.csv || true
-python benchmark_model_inference.py --config $CONF_PATH/case118_ieee_base.yaml --num_nodes 118 --num_edges 372 --num_gens 54 --iterations 20 --output_csv $OUT_DIR/case118.csv || true
-python benchmark_model_inference.py --config $CONF_PATH/case500_ieee_base.yaml --num_nodes 500 --num_edges 1466 --num_gens 224 --iterations 20 --output_csv $OUT_DIR/case500.csv || true
-python benchmark_model_inference.py --config $CONF_PATH/case2000_ieee_base.yaml --num_nodes 2000 --num_edges 7278 --num_gens 384 --iterations 20 --output_csv $OUT_DIR/case2000.csv || true
+python benchmark_model_inference.py --model hetero --config $CONF_PATH/case30_ieee_base.yaml --num_nodes 30 --num_edges 82 --num_gens 6 --iterations 20 --output_csv $OUT_DIR/case30.csv || true
+python benchmark_model_inference.py --model hetero --config $CONF_PATH/case118_ieee_base.yaml --num_nodes 118 --num_edges 372 --num_gens 54 --iterations 20 --output_csv $OUT_DIR/case118.csv || true
+
+######################################
+
+Example usage — GRIT (homogeneous, --num_gens is ignored):
+
+######################################
+
+python benchmark_model_inference.py --model grit --config $CONF_PATH/grit_pretraining.yaml --num_nodes 30 --num_edges 82 --iterations 20 --output_csv $OUT_DIR/grit_case30.csv || true
+python benchmark_model_inference.py --model grit --config $CONF_PATH/grit_pretraining.yaml --num_nodes 118 --num_edges 372 --iterations 20 --output_csv $OUT_DIR/grit_case118.csv || true
 
 ######################################
 
@@ -33,7 +43,7 @@ import argparse
 import platform
 from datetime import datetime
 from torch_geometric.loader import DataLoader
-from torch_geometric.data import HeteroData
+from torch_geometric.data import Data, HeteroData
 from gridfm_graphkit.io.param_handler import NestedNamespace, load_model
 
 # Optional: tqdm (imported but not required for core flow)
@@ -49,10 +59,13 @@ dynamo.config.suppress_errors = False
 # ----------------------------
 # Argument Parsing
 # ----------------------------
-parser = argparse.ArgumentParser(description="Benchmark GNS_final Heterogeneous Model with profiling CSV")
+parser = argparse.ArgumentParser(description="Benchmark GNN Model inference with profiling CSV")
+parser.add_argument("--model", type=str, choices=["hetero", "grit"], default="hetero",
+                    help="Model type: 'hetero' for GNS_heterogeneous, 'grit' for GritTransformer")
 parser.add_argument("--config", type=str, required=True, help="Path to config YAML for model")
 parser.add_argument("--num_nodes", type=int, required=True)
-parser.add_argument("--num_gens", type=int, required=True)
+parser.add_argument("--num_gens", type=int, default=0,
+                    help="Number of generator nodes (required for hetero, ignored for grit)")
 parser.add_argument("--num_edges", type=int, required=True)
 parser.add_argument("--output_csv", type=str, required=True)
 parser.add_argument("--iterations", type=int, default=20)
@@ -87,12 +100,29 @@ model = load_model(config_args).to(device).eval()
 # ----------------------------
 # Parameters
 # ----------------------------
+MODEL_TYPE = args.model
 N_BUS = args.num_nodes
 N_GEN = args.num_gens
 E = args.num_edges
-BUS_FEATS = config_args.model.input_bus_dim
-GEN_FEATS = config_args.model.input_gen_dim
 EDGE_FEATS = config_args.model.edge_dim
+
+if MODEL_TYPE == "hetero":
+    BUS_FEATS = config_args.model.input_bus_dim
+    GEN_FEATS = config_args.model.input_gen_dim
+    NODE_FEATS = None  # not used for hetero
+else:
+    # GRIT homogeneous model
+    NODE_FEATS = config_args.model.input_dim
+    OUTPUT_DIM = config_args.model.output_dim
+    MASK_DIM = getattr(config_args.data, "mask_dim", 6)
+    # Positional encoding config
+    RRWP_ENABLED = getattr(config_args.data.posenc_RRWP, "enable", False) if hasattr(config_args.data, "posenc_RRWP") else False
+    RRWP_KSTEPS = getattr(config_args.data.posenc_RRWP, "ksteps", 21) if RRWP_ENABLED else 0
+    RWSE_ENABLED = hasattr(config_args.model, "encoder") and getattr(config_args.model.encoder, "node_encoder", False) \
+                   and "RWSE" in getattr(config_args.model.encoder, "node_encoder_name", "")
+    RWSE_TIMES = getattr(config_args.model.encoder.posenc_RWSE.kernel, "times", 21) if RWSE_ENABLED else 0
+    BUS_FEATS = NODE_FEATS  # alias for CSV output compatibility
+    GEN_FEATS = 0
 
 # Keep original batch sizes list
 batch_sizes = [1, 2, 4, 8, 16, 32, 64, 96, 128, 256, 512, 640, 768, 1024, 2048, 2560, 3072, 3584, 4096, 6144, 9216, 13824, 17280, 20736, 30000, 35000, 40000, 45000, 50000, 55000, 60000, 65000, 70000, 75000, 80000, 85000, 90000]
@@ -224,6 +254,51 @@ def generate_hetero_graph():
     }
     return data
 
+
+# ----------------------------
+# Generate Synthetic Homogeneous Graph (GRIT)
+# ----------------------------
+def generate_homo_graph():
+    """
+    Generates a dummy homogeneous power network graph for GRIT benchmarking.
+
+    Returns:
+        data (Data): single self-contained homogeneous graph with:
+            - data.x: node features [N_BUS, NODE_FEATS]
+            - data.y: target labels [N_BUS, OUTPUT_DIM]
+            - data.edge_index: [2, E]
+            - data.edge_attr: [E, EDGE_FEATS]
+            - data.pestat_RWSE (if RWSE enabled): [N_BUS, RWSE_TIMES]
+            - data.rrwp, rrwp_index, rrwp_val (if RRWP enabled)
+    """
+    data = Data()
+
+    # Node features: same layout as powergrid_dataset (Pd, Qd, Pg, Qg, Vm, Va, PQ, PV, REF)
+    data.x = torch.randn(N_BUS, NODE_FEATS)
+    data.y = data.x[:, :OUTPUT_DIM].clone()
+
+    # Edges
+    src = torch.randint(0, N_BUS, (E,))
+    dst = torch.randint(0, N_BUS, (E,))
+    data.edge_index = torch.stack([src, dst], dim=0)
+    data.edge_attr = torch.randn(E, EDGE_FEATS)
+
+    # RWSE positional encoding (diagonal of random-walk matrix powers)
+    if RWSE_ENABLED:
+        data.pestat_RWSE = torch.randn(N_BUS, RWSE_TIMES).abs()
+
+    # RRWP positional / structural encoding
+    if RRWP_ENABLED:
+        data.rrwp = torch.randn(N_BUS, RRWP_KSTEPS)
+        # Sparse RRWP for edges: include existing edges + self-loops
+        self_loops = torch.arange(N_BUS).unsqueeze(0).repeat(2, 1)
+        rrwp_idx = torch.cat([data.edge_index, self_loops], dim=1)
+        rrwp_nnz = rrwp_idx.size(1)
+        data.rrwp_index = rrwp_idx
+        data.rrwp_val = torch.randn(rrwp_nnz, RRWP_KSTEPS)
+
+    return data
+
 # ----------------------------
 # Benchmark Function
 # ----------------------------
@@ -234,7 +309,10 @@ def benchmark():
 
     # Measure synthetic graph creation
     t0 = now_ms()
-    data = generate_hetero_graph()
+    if MODEL_TYPE == "hetero":
+        data = generate_hetero_graph()
+    else:
+        data = generate_homo_graph()
     t1 = now_ms()
     data_gen_time_ms = t1 - t0
 
@@ -343,7 +421,10 @@ def benchmark():
             t_warmup_start = now_ms()
             with torch.no_grad():
                 for _ in range(5):
-                    _ = test_model(batch.x_dict, batch.edge_index_dict, batch.edge_attr_dict, batch.mask_dict)
+                    if MODEL_TYPE == "hetero":
+                        _ = test_model(batch.x_dict, batch.edge_index_dict, batch.edge_attr_dict, batch.mask_dict)
+                    else:
+                        _ = test_model(batch.clone())
             maybe_cuda_sync()
             t_warmup_end = now_ms()
             warmup_time_ms = t_warmup_end - t_warmup_start
@@ -364,7 +445,10 @@ def benchmark():
                 if torch.cuda.is_available():
                     start_event.record()
                 for _ in range(num_iters):
-                    _ = test_model(batch.x_dict, batch.edge_index_dict, batch.edge_attr_dict, batch.mask_dict)
+                    if MODEL_TYPE == "hetero":
+                        _ = test_model(batch.x_dict, batch.edge_index_dict, batch.edge_attr_dict, batch.mask_dict)
+                    else:
+                        _ = test_model(batch.clone())
                 if torch.cuda.is_available():
                     end_event.record()
             maybe_cuda_sync()
