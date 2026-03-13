@@ -555,8 +555,8 @@ class OptimalityLoss(BaseLoss):
             loss=0.0
 
         try:
-            output = {"loss": loss, "Qg Violation Penalty loss": loss.detach()}
+            output = {"loss": loss, "Optimality loss": loss.detach()}
         except:
-            output = {"loss": loss, "Qg Violation Penalty loss": loss}
+            output = {"loss": loss, "Optimality loss": loss}
 
         return output
