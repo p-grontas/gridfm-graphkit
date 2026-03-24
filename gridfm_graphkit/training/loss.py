@@ -4,6 +4,7 @@ import torch.nn as nn
 from abc import ABC, abstractmethod
 from gridfm_graphkit.io.registries import LOSS_REGISTRY
 from torch_scatter import scatter_add
+from torch_geometric.utils import to_torch_coo_tensor
 
 from gridfm_graphkit.datasets.globals import (
     # Bus feature indices
@@ -19,6 +20,11 @@ from gridfm_graphkit.datasets.globals import (
     PG_OUT,
     # Generator feature indices
     PG_H,
+    # Edge feature indices
+    YFF_TT_R,
+    YFF_TT_I,
+    YFT_TF_R,
+    YFT_TF_I,
 )
 
 
@@ -322,3 +328,113 @@ class LossPerDim(BaseLoss):
             f"MSE loss {self.dim}": mse_loss.detach(),
             f"MAE loss {self.dim}": mae_loss.detach(),
         }
+    
+@LOSS_REGISTRY.register("PBE")
+class PBELoss(BaseLoss):
+    """
+    Loss based on the Power Balance Equations.
+
+    Adapted for the heterogeneous graph convention: predictions and targets
+    are passed as dicts (``{"bus": …, "gen": …}``).  Generator active power
+    is aggregated onto bus nodes via the ``(gen, connected_to, bus)`` edge
+    index before computing the power balance.
+    """
+
+    def __init__(self, loss_args, args):
+        super(PBELoss, self).__init__()
+        self.visualization = getattr(loss_args, "visualization", False)
+
+    def forward(
+        self,
+        pred_dict,
+        target_dict,
+        edge_index_dict,
+        edge_attr_dict,
+        mask_dict,
+        model=None,
+    ):
+        pred_bus = pred_dict["bus"]          # [N_bus, output_bus_dim]
+        target_bus = target_dict["bus"]      # [N_bus, bus_feat_dim]
+        num_bus = target_bus.size(0)
+
+        bus_edge_index = edge_index_dict[("bus", "connects", "bus")]
+        bus_edge_attr = edge_attr_dict[("bus", "connects", "bus")]
+        mask_bus = mask_dict["bus"]
+
+        # --- Voltage: use prediction where masked, target where known ---
+        Vm_pred = pred_bus[:, VM_OUT]
+        Va_pred = pred_bus[:, VA_OUT]
+        Vm_target = target_bus[:, VM_H]
+        Va_target = target_bus[:, VA_H]
+
+        mask_Vm = mask_bus[:, VM_H]
+        mask_Va = mask_bus[:, VA_H]
+
+        V_m = torch.where(mask_Vm, Vm_pred, Vm_target)
+        V_a = torch.where(mask_Va, Va_pred, Va_target)
+
+        # Complex voltage
+        V = V_m * torch.exp(1j * V_a)
+        V_conj = torch.conj(V)
+
+        # --- Admittance matrix from bus-bus edge attrs ---
+        # Use Yff (diagonal-block) real/imag as the admittance entries
+        edge_complex = bus_edge_attr[:, YFF_TT_R] + 1j * bus_edge_attr[:, YFF_TT_I]
+
+        Y_bus_sparse = to_torch_coo_tensor(
+            bus_edge_index,
+            edge_complex,
+            size=(num_bus, num_bus),
+        )
+        Y_bus_conj = torch.conj(Y_bus_sparse)
+
+        # Complex power injection:  S_inj = diag(V) * conj(Y) * conj(V)
+        S_injection = torch.diag(V) @ Y_bus_conj @ V_conj
+
+        # --- Net power from predictions/targets ---
+        # Pg: aggregate generator predictions onto buses
+        gen_to_bus_ei = edge_index_dict[("gen", "connected_to", "bus")]
+        Pg_per_bus = scatter_add(
+            pred_dict["gen"].squeeze(-1),
+            gen_to_bus_ei[1],
+            dim=0,
+            dim_size=num_bus,
+        )
+
+        Pd = target_bus[:, PD_H]
+        Qd = target_bus[:, QD_H]
+
+        # Qg: use prediction if the model predicts it, else use target
+        if pred_bus.size(1) > QG_OUT:
+            Qg = torch.where(mask_bus[:, QG_H], pred_bus[:, QG_OUT], target_bus[:, QG_H])
+        else:
+            Qg = target_bus[:, QG_H]
+
+        net_P = Pg_per_bus - Pd
+        net_Q = Qg - Qd
+        S_net = net_P + 1j * net_Q
+
+        # --- Loss ---
+        loss = torch.mean(torch.abs(S_net - S_injection))
+
+        real_loss = torch.mean(
+            torch.abs(torch.real(S_net - S_injection)),
+        )
+        imag_loss = torch.mean(
+            torch.abs(torch.imag(S_net - S_injection)),
+        )
+
+        result = {
+            "loss": loss,
+            "Power loss in p.u.": loss.detach(),
+            "Active Power Loss in p.u.": real_loss.detach(),
+            "Reactive Power Loss in p.u.": imag_loss.detach(),
+        }
+        if self.visualization:
+            result["Nodal Active Power Loss in p.u."] = torch.abs(
+                torch.real(S_net - S_injection),
+            )
+            result["Nodal Reactive Power Loss in p.u."] = torch.abs(
+                torch.imag(S_net - S_injection),
+            )
+        return result
