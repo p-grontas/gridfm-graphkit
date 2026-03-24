@@ -12,7 +12,7 @@ from functools import partial
 from gridfm_graphkit.datasets.rrwp import add_full_rrwp
 
 from torch_geometric.transforms import BaseTransform
-from torch_geometric.data import Data
+from torch_geometric.data import Data, HeteroData
 from typing import Any
 
 from torch_geometric.utils.num_nodes import maybe_num_nodes
@@ -129,9 +129,38 @@ class ComputePosencStat(BaseTransform):
     def forward(self, data: Any) -> Any:
         pass
 
-    def __call__(self, data: Data) -> Data:
+    def __call__(self, data) -> Data:
+        if isinstance(data, HeteroData):
+            return self._call_hetero(data)
+
         data = compute_posenc_stats(data, 
                                     pe_types=self.pe_types,
                                     cfg=self.cfg
                                     )
+        return data
+
+    def _call_hetero(self, data: HeteroData) -> HeteroData:
+        """Compute PE on the bus-only subgraph and store results on data['bus']."""
+        bus_data = Data(
+            x=data["bus"].x,
+            edge_index=data["bus", "connects", "bus"].edge_index,
+            num_nodes=data["bus"].num_nodes,
+        )
+        if hasattr(data["bus", "connects", "bus"], "edge_weight"):
+            bus_data.edge_weight = data["bus", "connects", "bus"].edge_weight
+
+        bus_data = compute_posenc_stats(
+            bus_data, pe_types=self.pe_types, cfg=self.cfg,
+        )
+
+        # Copy computed PE attributes back onto the HeteroData bus store
+        pe_attrs = [
+            "pestat_RWSE",          # RWSE
+            "rrwp", "rrwp_index", "rrwp_val",  # RRWP
+            "log_deg", "deg",       # degree info from RRWP
+        ]
+        for attr in pe_attrs:
+            if hasattr(bus_data, attr):
+                data["bus"][attr] = getattr(bus_data, attr)
+
         return data

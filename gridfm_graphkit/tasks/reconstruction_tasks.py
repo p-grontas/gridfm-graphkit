@@ -39,16 +39,11 @@ class ReconstructionTask(BaseTask):
         self.batch_size = int(args.training.batch_size)
         self.test_outputs = {i: [] for i in range(len(args.data.networks))}
 
-    def forward(self, x_dict, edge_index_dict, edge_attr_dict, mask_dict):
-        return self.model(x_dict, edge_index_dict, edge_attr_dict, mask_dict)
+    def forward(self, batch):
+        return self.model(batch)
 
     def shared_step(self, batch):
-        output = self.forward(
-            x_dict=batch.x_dict,
-            edge_index_dict=batch.edge_index_dict,
-            edge_attr_dict=batch.edge_attr_dict,
-            mask_dict=batch.mask_dict,
-        )
+        output = self.forward(batch)
 
         loss_dict = self.loss_fn(
             output,

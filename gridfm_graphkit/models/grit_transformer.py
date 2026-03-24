@@ -1,6 +1,7 @@
 from gridfm_graphkit.io.registries import MODELS_REGISTRY
 import torch
 from torch import nn
+from torch_geometric.data import Data
 
 from gridfm_graphkit.models.rrwp_encoder import RRWPLinearNodeEncoder, RRWPLinearEdgeEncoder
 from gridfm_graphkit.models.grit_layer import GritTransformerLayer
@@ -118,7 +119,6 @@ class GraphHead(nn.Module):
         return pred
 
 
-@MODELS_REGISTRY.register("GRIT")
 class GritTransformer(torch.nn.Module):
     """
     The GritTransformer (Graph Inductive Bias Transformer) from
@@ -214,3 +214,90 @@ class GritTransformer(torch.nn.Module):
             batch = module(batch)
 
         return batch
+
+
+@MODELS_REGISTRY.register("GRIT")
+class GritHeteroAdapter(torch.nn.Module):
+    """Adapter that enables the homogeneous GRIT transformer to operate on
+    heterogeneous power-grid graphs.
+
+    Extracts the bus-only homogeneous subgraph using PyG's native HeteroData
+    accessors, runs it through the GRIT encoder and transformer layers, and
+    produces per-node-type predictions.  Generator output comes from a
+    lightweight standalone MLP (generators are not seen by the transformer).
+
+    Returns:
+        dict: ``{"bus": Tensor[num_bus, output_bus_dim],
+                  "gen": Tensor[num_gen, output_gen_dim]}``
+    """
+
+    def __init__(self, args):
+        super().__init__()
+
+        dim_inner = args.model.hidden_size
+        output_bus_dim = args.model.output_bus_dim
+        output_gen_dim = args.model.output_gen_dim
+        input_gen_dim = args.model.input_gen_dim
+
+        # Ensure config keys expected by GritTransformer are present.
+        # input_dim  = bus feature dimension  (used by FeatureEncoder)
+        # output_dim = bus output dimension   (used by the unused GraphHead)
+        if not hasattr(args.model, "input_dim"):
+            args.model.input_dim = args.model.input_bus_dim
+        if not hasattr(args.model, "output_dim"):
+            args.model.output_dim = output_bus_dim
+
+        # The original homogeneous GRIT
+        # (encoder + optional PE encoders + transformer layers + GraphHead)
+        self.grit = GritTransformer(args)
+
+        # Per-node-type output heads (replace GraphHead for hetero output)
+        self.bus_head = nn.Sequential(
+            nn.Linear(dim_inner, dim_inner),
+            nn.LeakyReLU(),
+            nn.Linear(dim_inner, output_bus_dim),
+        )
+        self.gen_head = nn.Sequential(
+            nn.Linear(input_gen_dim, dim_inner),
+            nn.LeakyReLU(),
+            nn.Linear(dim_inner, output_gen_dim),
+        )
+
+    def forward(self, batch):
+        """Forward pass on a heterogeneous power-grid batch.
+
+        Args:
+            batch: A batched ``HeteroData`` with node types ``"bus"`` and
+                ``"gen"``, and edge type ``("bus", "connects", "bus")``.
+
+        Returns:
+            dict with keys ``"bus"`` and ``"gen"``, each mapping to the
+            predicted output features.
+        """
+        # --- Extract bus-only homogeneous subgraph ---
+        homo = Data(
+            x=batch["bus"].x,
+            y=batch["bus"].y,
+            edge_index=batch["bus", "connects", "bus"].edge_index,
+            edge_attr=batch["bus", "connects", "bus"].edge_attr,
+            batch=batch["bus"].batch,
+        )
+
+        # Forward positional-encoding attributes if present
+        for attr in ("pestat_RWSE", "rrwp", "rrwp_index", "rrwp_val", "log_deg", "deg"):
+            if hasattr(batch["bus"], attr):
+                setattr(homo, attr, getattr(batch["bus"], attr))
+
+        # --- Run GRIT encoder + PE encoders + transformer layers ---
+        homo = self.grit.encoder(homo)
+        if hasattr(self.grit, "rrwp_abs_encoder"):
+            homo = self.grit.rrwp_abs_encoder(homo)
+        if hasattr(self.grit, "rrwp_rel_encoder"):
+            homo = self.grit.rrwp_rel_encoder(homo)
+        homo = self.grit.layers(homo)
+
+        # --- Per-type decoding ---
+        bus_out = self.bus_head(homo.x)
+        gen_out = self.gen_head(batch["gen"].x)
+
+        return {"bus": bus_out, "gen": gen_out}
