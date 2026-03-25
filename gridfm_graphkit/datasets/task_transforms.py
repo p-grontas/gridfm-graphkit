@@ -8,6 +8,7 @@ from gridfm_graphkit.datasets.transforms import (
 from gridfm_graphkit.datasets.masking import (
     AddOPFHeteroMask,
     AddPFHeteroMask,
+    AddRandomHeteroMask,
     SimulateMeasurements,
 )
 from gridfm_graphkit.io.registries import TRANSFORM_REGISTRY
@@ -20,7 +21,13 @@ class PowerFlowTransforms(Compose):
 
         transforms.append(RemoveInactiveBranches())
         transforms.append(RemoveInactiveGenerators())
-        transforms.append(AddPFHeteroMask())
+
+        mask_type = getattr(args.data, "mask_type", None)
+        if mask_type == "rnd":
+            transforms.append(AddRandomHeteroMask(mask_ratio=args.data.mask_ratio))
+        else:
+            transforms.append(AddPFHeteroMask())
+
         transforms.append(ApplyMasking(args=args))
 
         # Pass the list of transforms to Compose
@@ -34,7 +41,13 @@ class OptimalPowerFlowTransforms(Compose):
 
         transforms.append(RemoveInactiveBranches())
         transforms.append(RemoveInactiveGenerators())
-        transforms.append(AddOPFHeteroMask())
+
+        mask_type = getattr(args.data, "mask_type", None)
+        if mask_type == "rnd":
+            transforms.append(AddRandomHeteroMask(mask_ratio=args.data.mask_ratio))
+        else:
+            transforms.append(AddOPFHeteroMask())
+
         transforms.append(ApplyMasking(args=args))
 
         # Pass the list of transforms to Compose

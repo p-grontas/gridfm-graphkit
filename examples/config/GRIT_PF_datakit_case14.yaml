@@ -5,7 +5,8 @@ task:
   task_name: PowerFlow
 data:
   baseMVA: 100
-  mask_value: 0.0
+  mask_type: rnd        # or determinstic
+  mask_ratio: 0.5       # for random masking only
   normalization: HeteroDataMVANormalizer
   networks:
   - case14_ieee
