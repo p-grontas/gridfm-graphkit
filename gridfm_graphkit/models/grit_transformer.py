@@ -178,6 +178,11 @@ class GritTransformer(torch.nn.Module):
 
         layers = []
         for ll in range(num_layers):
+            # The last layer's edge output is never consumed downstream
+            # (only node features feed into the output heads), so skip
+            # creating O_e / norm_e parameters to avoid DDP unused-parameter
+            # errors.
+            is_last = (ll == num_layers - 1)
             layers.append(GritTransformerLayer(
                 in_dim=args.model.gt.dim_hidden,
                 out_dim=args.model.gt.dim_hidden,
@@ -188,8 +193,8 @@ class GritTransformer(torch.nn.Module):
                 layer_norm=args.model.gt.layer_norm,
                 batch_norm=args.model.gt.batch_norm,
                 residual=True,
-                norm_e=args.model.gt.attn.norm_e,
-                O_e=args.model.gt.attn.O_e,
+                norm_e=False if is_last else args.model.gt.attn.norm_e,
+                O_e=False if is_last else args.model.gt.attn.O_e,
                 cfg=args.model.gt,
             ))
 
