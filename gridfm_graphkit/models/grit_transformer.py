@@ -126,7 +126,7 @@ class GritTransformer(torch.nn.Module):
     2023.
 
     """
-    def __init__(self, args):
+    def __init__(self, args, include_decoder=True):
         super().__init__()
 
 
@@ -195,7 +195,8 @@ class GritTransformer(torch.nn.Module):
 
         self.layers = nn.Sequential(*layers)
 
-        self.decoder = GraphHead(dim_inner, dim_out)
+        if include_decoder:
+            self.decoder = GraphHead(dim_inner, dim_out)
 
     def forward(self, batch):   
         """
@@ -266,8 +267,9 @@ class GritHeteroAdapter(torch.nn.Module):
             args.model.gt.dim_hidden = args.model.hidden_size
 
         # The original homogeneous GRIT
-        # (encoder + optional PE encoders + transformer layers + GraphHead)
-        self.grit = GritTransformer(args)
+        # (encoder + optional PE encoders + transformer layers)
+        # Decoder is excluded — this adapter provides its own per-type heads.
+        self.grit = GritTransformer(args, include_decoder=False)
 
         # Per-node-type output heads (replace GraphHead for hetero output)
         self.bus_head = nn.Sequential(
