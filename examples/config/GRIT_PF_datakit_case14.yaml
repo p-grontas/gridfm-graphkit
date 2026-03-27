@@ -28,7 +28,7 @@ model:
   # edge_dim must match the bus-bus edge feature count after transforms
   # (P_E, Q_E, YFF_TT_R, YFF_TT_I, YFT_TF_R, YFT_TF_I, TAP, ANG_MIN, ANG_MAX, RATE_A)
   edge_dim: 10
-  hidden_size: 116
+  hidden_size: 496
   # input_dim = bus feature count (used by GRIT core FeatureEncoder)
   input_dim: 15
   # Hetero adapter head dimensions
@@ -36,7 +36,7 @@ model:
   input_gen_dim: 6
   output_bus_dim: 2
   output_gen_dim: 1
-  num_layers: 10
+  num_layers: 7
   type: GRIT
   act: relu
   encoder:

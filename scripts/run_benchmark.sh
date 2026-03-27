@@ -3,13 +3,11 @@
 set +e  # Do NOT exit on error
 
 CONFIGS=(
-    "gridfm01"
-    "gridfm02"
+    "grit01"
 )
 
 CONFIG_PATHS=(
-    "../examples/config/gridFMv0.1_pretraining.yaml"
-    "../examples/config/gridFMv0.2_pretraining.yaml"
+    "../examples/config/GRIT_PF_datakit_case14.yaml"
 )
 
 GRAPH_SIZES=(

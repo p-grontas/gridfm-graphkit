@@ -96,6 +96,8 @@ with open(args.config, "r") as f:
 
 config_args = NestedNamespace(**base_config)
 model = load_model(config_args).to(device).eval()
+tot_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+print("**Total model trainable params: {}".format(tot_params))
 
 # ----------------------------
 # Parameters
@@ -129,7 +131,7 @@ else:
     RWSE_TIMES = 0
 
 # Keep original batch sizes list
-batch_sizes = [1, 2, 4, 8, 16, 32, 64, 96, 128, 256, 512, 640, 768, 1024, 2048, 2560, 3072, 3584, 4096, 6144, 9216, 13824, 17280, 20736, 30000, 35000, 40000, 45000, 50000, 55000, 60000, 65000, 70000, 75000, 80000, 85000, 90000]
+batch_sizes = [1, 2, 4, 8, 16, 32]
 iterations = args.iterations
 
 # ----------------------------
