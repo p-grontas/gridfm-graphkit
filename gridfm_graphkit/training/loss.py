@@ -524,8 +524,18 @@ class PBELoss(BaseLoss):
         ) > 0
         Pg_per_bus = torch.where(any_gen_masked, pred_bus[:, PG_OUT], target_pg_agg)
 
-        Pd = target_bus[:, PD_H]
-        Qd = target_bus[:, QD_H]
+        # Pd, Qd: use prediction where masked, target where known.
+        # For deterministic PF/OPF masks PD/QD are never masked, so this
+        # is equivalent to always using target.  For random masking this
+        # lets PBE provide gradient signal for PD/QD reconstruction.
+        if pred_bus.size(1) > PD_OUT:
+            Pd = torch.where(mask_bus[:, PD_H], pred_bus[:, PD_OUT], target_bus[:, PD_H])
+        else:
+            Pd = target_bus[:, PD_H]
+        if pred_bus.size(1) > QD_OUT:
+            Qd = torch.where(mask_bus[:, QD_H], pred_bus[:, QD_OUT], target_bus[:, QD_H])
+        else:
+            Qd = target_bus[:, QD_H]
 
         # Qg: use prediction if the model predicts it, else use target
         if pred_bus.size(1) > QG_OUT:
