@@ -455,17 +455,49 @@ class PBELoss(BaseLoss):
         V_conj = torch.conj(V)
 
         # --- Admittance matrix from bus-bus edge attrs ---
-        # Off-diagonal entries of Y-bus: Y[from][to] = Yft, Y[to][from] = Ytf.
-        # The dataset stores forward edges with Yft at YFT_TF columns and
-        # reverse edges with Ytf at the same columns, so indexing YFT_TF_R/I
-        # gives the correct off-diagonal admittance for both directions.
-        # (YFF_TT columns hold diagonal-block entries Yff/Ytt which belong on
-        # the Y-bus diagonal, not at off-diagonal edge positions.)
-        edge_complex = bus_edge_attr[:, YFT_TF_R] + 1j * bus_edge_attr[:, YFT_TF_I]
+        # The Y-bus matrix has off-diagonal AND diagonal entries.
+        #
+        # Off-diagonal: Y[from][to] = Yft, Y[to][from] = Ytf, stored in the
+        # YFT_TF columns of the edge attributes.
+        #
+        # Diagonal: Y[k][k] = sum of Yff/Ytt for all branches at bus k.
+        # The dataset stores Yff (forward edges) and Ytt (reverse edges) in
+        # the YFF_TT columns.  For every edge, YFF_TT at the *source* bus
+        # gives that branch's diagonal contribution at the source.  Summing
+        # over all edges with source == k yields the full branch-diagonal.
+        #
+        # The reference project loads a pre-built Y-bus (y_bus_data.parquet)
+        # that includes self-loops for diagonal entries.  Here we reconstruct
+        # the same structure from per-branch pi-model parameters.
+
+        # Off-diagonal admittance values
+        edge_offdiag = bus_edge_attr[:, YFT_TF_R] + 1j * bus_edge_attr[:, YFT_TF_I]
+
+        # Diagonal: aggregate Yff/Ytt to source bus of each edge
+        Y_diag_r = scatter_add(
+            bus_edge_attr[:, YFF_TT_R],
+            bus_edge_index[0],
+            dim=0,
+            dim_size=num_bus,
+        )
+        Y_diag_i = scatter_add(
+            bus_edge_attr[:, YFF_TT_I],
+            bus_edge_index[0],
+            dim=0,
+            dim_size=num_bus,
+        )
+        Y_diag = Y_diag_r + 1j * Y_diag_i
+
+        # Build complete Y-bus: off-diagonal edges + self-loops for diagonal
+        diag_idx = torch.arange(num_bus, device=bus_edge_index.device)
+        full_edge_index = torch.cat(
+            [bus_edge_index, torch.stack([diag_idx, diag_idx])], dim=1,
+        )
+        full_edge_values = torch.cat([edge_offdiag, Y_diag])
 
         Y_bus_sparse = to_torch_coo_tensor(
-            bus_edge_index,
-            edge_complex,
+            full_edge_index,
+            full_edge_values,
             size=(num_bus, num_bus),
         )
         Y_bus_conj = torch.conj(Y_bus_sparse)
