@@ -455,8 +455,13 @@ class PBELoss(BaseLoss):
         V_conj = torch.conj(V)
 
         # --- Admittance matrix from bus-bus edge attrs ---
-        # Use Yff (diagonal-block) real/imag as the admittance entries
-        edge_complex = bus_edge_attr[:, YFF_TT_R] + 1j * bus_edge_attr[:, YFF_TT_I]
+        # Off-diagonal entries of Y-bus: Y[from][to] = Yft, Y[to][from] = Ytf.
+        # The dataset stores forward edges with Yft at YFT_TF columns and
+        # reverse edges with Ytf at the same columns, so indexing YFT_TF_R/I
+        # gives the correct off-diagonal admittance for both directions.
+        # (YFF_TT columns hold diagonal-block entries Yff/Ytt which belong on
+        # the Y-bus diagonal, not at off-diagonal edge positions.)
+        edge_complex = bus_edge_attr[:, YFT_TF_R] + 1j * bus_edge_attr[:, YFT_TF_I]
 
         Y_bus_sparse = to_torch_coo_tensor(
             bus_edge_index,
