@@ -347,11 +347,17 @@ class GritHeteroAdapter(torch.nn.Module):
             nn.LeakyReLU(),
             nn.Linear(dim_inner, output_bus_dim),
         )
-        self.gen_head = nn.Sequential(
-            nn.Linear(input_gen_dim, dim_inner),
-            nn.LeakyReLU(),
-            nn.Linear(dim_inner, output_gen_dim),
-        )
+        # gen_head is only needed for tasks that require per-generator
+        # predictions (e.g. OPF cost computation). When output_gen_dim is 0
+        # or not set, skip it to avoid DDP unused-parameter errors.
+        if output_gen_dim and output_gen_dim > 0:
+            self.gen_head = nn.Sequential(
+                nn.Linear(input_gen_dim, dim_inner),
+                nn.LeakyReLU(),
+                nn.Linear(dim_inner, output_gen_dim),
+            )
+        else:
+            self.gen_head = None
 
     def forward(self, batch):
         """Forward pass on a heterogeneous power-grid batch.
@@ -392,6 +398,6 @@ class GritHeteroAdapter(torch.nn.Module):
 
         # --- Per-type decoding ---
         bus_out = self.bus_head(homo.x)
-        gen_out = self.gen_head(batch["gen"].x)
+        gen_out = self.gen_head(batch["gen"].x) if self.gen_head is not None else batch["gen"].x
 
         return {"bus": bus_out, "gen": gen_out}

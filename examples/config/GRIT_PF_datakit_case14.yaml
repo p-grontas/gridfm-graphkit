@@ -36,7 +36,7 @@ model:
   input_bus_dim: 16
   input_gen_dim: 6
   output_bus_dim: 6    # [VM, VA, PG, QG, PD, QD]
-  output_gen_dim: 1
+  output_gen_dim: 0    # PG predicted at bus level; no per-generator head needed
   num_layers: 7
   type: GRIT
   act: relu
