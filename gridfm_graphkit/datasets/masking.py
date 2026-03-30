@@ -37,11 +37,11 @@ class AddRandomHeteroMask(BaseTransform):
     """Creates random masks for self-supervised pretraining on heterogeneous power grid graphs.
 
     Each selected feature dimension is independently masked per node/edge with
-    probability ``mask_ratio``.  Masked bus features: VM, VA, QG.  Masked gen
-    features: PG.  Masked branch features: P_E, Q_E.
+    probability ``mask_ratio``.  Masked bus features: PD, QD, VM, VA, QG.
+    Masked gen features: PG.  Masked branch features: P_E, Q_E.
 
     The output ``data.mask_dict`` has the same structure as the deterministic
-    PF / OPF masks so that downstream losses (``MaskedBusMSE``, ``MaskedGenMSE``,
+    PF / OPF masks so that downstream losses (``MaskedReconstructionMSE``,
     ``PBELoss``, etc.) work without modification.
     """
 
@@ -61,7 +61,7 @@ class AddRandomHeteroMask(BaseTransform):
         # Random bus mask on variable features the model reconstructs
         mask_bus = torch.zeros_like(bus_x, dtype=torch.bool)
         n_bus = bus_x.size(0)
-        for feat_idx in (VM_H, VA_H, QG_H):
+        for feat_idx in (PD_H, QD_H, VM_H, VA_H, QG_H):
             mask_bus[:, feat_idx] = torch.rand(n_bus) < self.mask_ratio
 
         # Random gen mask on PG

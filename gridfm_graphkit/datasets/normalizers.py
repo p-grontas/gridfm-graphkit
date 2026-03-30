@@ -306,6 +306,8 @@ class HeteroDataMVANormalizer(Normalizer):
         gen_output = output["gen"]
         bus_output[:, PG_OUT] *= self.baseMVA
         bus_output[:, QG_OUT] *= self.baseMVA
+        bus_output[:, PD_OUT] *= self.baseMVA   # for random masking
+        bus_output[:, QD_OUT] *= self.baseMVA   # for random masking
         gen_output[:, PG_OUT_GEN] *= self.baseMVA
 
     def get_stats(self) -> dict:

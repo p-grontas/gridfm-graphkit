@@ -18,6 +18,8 @@ from gridfm_graphkit.datasets.globals import (
     VA_OUT,
     QG_OUT,
     PG_OUT,
+    PD_OUT,
+    QD_OUT,
     # Generator feature indices
     PG_H,
     # Edge feature indices
@@ -140,6 +142,81 @@ class MaskedBusMSE(torch.nn.Module):
             reduction=self.reduction,
         )
         return {"loss": loss, "Masked bus MSE loss": loss.detach()}
+
+
+@LOSS_REGISTRY.register("MaskedReconstructionMSE")
+class MaskedReconstructionMSE(BaseLoss):
+    """Unified masked MSE over bus-level quantities [VM, VA, PG, QG, PD, QD].
+
+    Mirrors the homogeneous reference MaskedMSE by combining bus predictions
+    and aggregated generator PG into a single prediction/target/mask tensor.
+    PG targets are aggregated from generator ground truth onto buses via
+    scatter_add; the bus-level PG mask is True when any generator at the bus
+    is masked, indicating that the model must reconstruct that quantity.
+
+    Replaces the separate MaskedBusMSE + MaskedGenMSE pair.
+    Requires output_bus_dim >= 6 so the bus head predicts
+    [VM, VA, PG, QG, PD, QD].
+    """
+
+    def __init__(self, loss_args, args):
+        super().__init__()
+        self.reduction = "mean"
+
+    def forward(
+        self,
+        pred_dict,
+        target_dict,
+        edge_index_dict,
+        edge_attr_dict,
+        mask_dict,
+        model=None,
+    ):
+        pred_bus = pred_dict["bus"]
+        target_bus = target_dict["bus"]
+        num_bus = target_bus.size(0)
+        gen_to_bus_ei = edge_index_dict[("gen", "connected_to", "bus")]
+
+        # --- Build target: [VM, VA, PG_agg, QG, PD, QD] ---
+        target_pg_agg = scatter_add(
+            target_dict["gen"][:, PG_H],
+            gen_to_bus_ei[1],
+            dim=0,
+            dim_size=num_bus,
+        )
+        target = torch.stack([
+            target_bus[:, VM_H],
+            target_bus[:, VA_H],
+            target_pg_agg,
+            target_bus[:, QG_H],
+            target_bus[:, PD_H],
+            target_bus[:, QD_H],
+        ], dim=1)
+
+        # --- Build mask: [N_bus, 6] ---
+        # PG bus-level mask: True if any generator at the bus has PG masked
+        gen_pg_masked = mask_dict["gen"][:, PG_H].float()
+        any_gen_masked = scatter_add(
+            gen_pg_masked,
+            gen_to_bus_ei[1],
+            dim=0,
+            dim_size=num_bus,
+        ) > 0
+
+        mask = torch.stack([
+            mask_dict["bus"][:, VM_H],
+            mask_dict["bus"][:, VA_H],
+            any_gen_masked,
+            mask_dict["bus"][:, QG_H],
+            mask_dict["bus"][:, PD_H],
+            mask_dict["bus"][:, QD_H],
+        ], dim=1)
+
+        # --- Prediction: [VM, VA, PG, QG, PD, QD] from bus head ---
+        pred = pred_bus[:, [VM_OUT, VA_OUT, PG_OUT, QG_OUT, PD_OUT, QD_OUT]]
+
+        loss = F.mse_loss(pred[mask], target[mask], reduction=self.reduction)
+        return {"loss": loss, "Masked reconstruction MSE loss": loss.detach()}
 
 
 @LOSS_REGISTRY.register("MSE")

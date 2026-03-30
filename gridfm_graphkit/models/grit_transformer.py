@@ -6,6 +6,8 @@ from torch_geometric.data import Data
 from gridfm_graphkit.models.rrwp_encoder import RRWPLinearNodeEncoder, RRWPLinearEdgeEncoder
 from gridfm_graphkit.models.grit_layer import GritTransformerLayer
 from gridfm_graphkit.models.kernel_pos_encoder import RWSENodeEncoder
+from torch_scatter import scatter_add
+from gridfm_graphkit.datasets.globals import PG_H
 
 
 class BatchNorm1dNode(torch.nn.Module):
@@ -242,6 +244,48 @@ class GritTransformer(torch.nn.Module):
 
         return batch
 
+def aggregate_pg(batch, mask_value=-1.0):
+    """Aggregate per-generator active power (PG) onto bus nodes.
+
+    In the homogeneous reference, PG is a direct bus feature visible to the
+    transformer alongside Pd, Qd, Vm, Va, etc.  In the heterogeneous
+    representation PG lives on separate generator nodes, so it must be
+    aggregated onto buses before the transformer can learn voltage-power
+    coupling.
+
+    Masked generators (where PG has been replaced by the mask value) are
+    excluded from the sum to avoid corrupting the aggregated signal.  Buses
+    where *all* connected generators are masked receive the mask value
+    instead, preserving a consistent "unknown" indicator.
+    """
+    gen_to_bus = batch["gen", "connected_to", "bus"].edge_index
+    gen_pg = batch["gen"].x[:, PG_H]
+    gen_masked = batch.mask_dict["gen"][:, PG_H]  # True = masked
+
+    # Zero out masked generators so they don't contribute to the sum
+    pg_clean = torch.where(gen_masked, torch.zeros_like(gen_pg), gen_pg)
+
+    pg_per_bus = scatter_add(
+        pg_clean,
+        gen_to_bus[1],
+        dim=0,
+        dim_size=batch["bus"].x.size(0),
+    )
+
+    # Check which buses have ALL generators masked (or no generators at all)
+    unmasked_count = scatter_add(
+        (~gen_masked).float(),
+        gen_to_bus[1],
+        dim=0,
+        dim_size=batch["bus"].x.size(0),
+    )
+    all_masked = unmasked_count == 0
+
+    # Set mask_value for fully-masked buses
+    pg_per_bus[all_masked] = mask_value
+
+    return pg_per_bus
+
 
 @MODELS_REGISTRY.register("GRIT")
 class GritHeteroAdapter(torch.nn.Module):
@@ -321,8 +365,12 @@ class GritHeteroAdapter(torch.nn.Module):
             predicted output features.
         """
         # --- Extract bus-only homogeneous subgraph ---
+        # Aggregate generator PG onto buses
+        pg_per_bus = aggregate_pg(batch, mask_value=self.grit.mask_value[0].item())
+        bus_x = torch.cat([batch["bus"].x, pg_per_bus.unsqueeze(-1)], dim=-1)  # 15 → 16D
+        
         homo = Data(
-            x=batch["bus"].x,
+            x=bus_x,
             y=batch["bus"].y,
             edge_index=batch["bus", "connects", "bus"].edge_index,
             edge_attr=batch["bus", "connects", "bus"].edge_attr,

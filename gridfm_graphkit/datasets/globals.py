@@ -24,6 +24,8 @@ VM_OUT = 0
 VA_OUT = 1
 PG_OUT = 2
 QG_OUT = 3
+PD_OUT = 4   # for random masking
+QD_OUT = 5   # for random masking
 PG_OUT_GEN = 0
 
 
