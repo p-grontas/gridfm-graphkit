@@ -100,9 +100,12 @@ class MaskedGenMSE(torch.nn.Module):
         mask_dict,
         model=None,
     ):
+        gen_pred = pred_dict["gen"][:, : (PG_H + 1)]
+        gen_target = target_dict["gen"][:, : (PG_H + 1)]
+        mask = mask_dict["gen"][:, : (PG_H + 1)]
         loss = F.mse_loss(
-            pred_dict["gen"][mask_dict["gen"][:, : (PG_H + 1)]],
-            target_dict["gen"][mask_dict["gen"][:, : (PG_H + 1)]],
+            gen_pred[mask],
+            gen_target[mask],
             reduction=self.reduction,
         )
         return {"loss": loss, "Masked generator MSE loss": loss.detach()}
