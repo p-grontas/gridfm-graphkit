@@ -166,18 +166,23 @@ class PowerFlowTask(ReconstructionTask):
 
         loss_dict["PBE Mean"] = pbe_mean.detach()
 
+        # Slice output to the 4 target columns [VM, VA, PG, QG] so that
+        # models with wider bus output (e.g. GRIT with output_bus_dim=6)
+        # are compared correctly against the 4-column target.
+        output_bus_metrics = output["bus"][:, [VM_OUT, VA_OUT, PG_OUT, QG_OUT]]
+
         mse_PQ = F.mse_loss(
-            output["bus"][mask_PQ],
+            output_bus_metrics[mask_PQ],
             target[mask_PQ],
             reduction="none",
         )
         mse_PV = F.mse_loss(
-            output["bus"][mask_PV],
+            output_bus_metrics[mask_PV],
             target[mask_PV],
             reduction="none",
         )
         mse_REF = F.mse_loss(
-            output["bus"][mask_REF],
+            output_bus_metrics[mask_REF],
             target[mask_REF],
             reduction="none",
         )
