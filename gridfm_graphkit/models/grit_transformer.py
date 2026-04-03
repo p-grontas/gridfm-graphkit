@@ -6,6 +6,8 @@ from torch_geometric.data import Data
 from gridfm_graphkit.models.rrwp_encoder import RRWPLinearNodeEncoder, RRWPLinearEdgeEncoder
 from gridfm_graphkit.models.grit_layer import GritTransformerLayer
 from gridfm_graphkit.models.kernel_pos_encoder import RWSENodeEncoder
+from torch_scatter import scatter_add
+from gridfm_graphkit.datasets.globals import PG_H
 
 
 class BatchNorm1dNode(torch.nn.Module):
@@ -26,6 +28,27 @@ class BatchNorm1dNode(torch.nn.Module):
 
     def forward(self, batch):
         batch.x = self.bn(batch.x)
+        return batch
+
+
+class BatchNorm1dEdge(torch.nn.Module):
+    r"""A batch normalization layer for edge-level features.
+
+    Args:
+        dim_in (int): BatchNorm input dimension.
+        eps (float): BatchNorm eps.
+        momentum (float): BatchNorm momentum.
+    """
+    def __init__(self, dim_in, eps, momentum):
+        super().__init__()
+        self.bn = torch.nn.BatchNorm1d(
+            dim_in,
+            eps=eps,
+            momentum=momentum,
+        )
+
+    def forward(self, batch):
+        batch.edge_attr = self.bn(batch.edge_attr)
         return batch
 
 
@@ -84,7 +107,7 @@ class FeatureEncoder(torch.nn.Module):
             # Encode integer edge features via nn.Embeddings
             self.edge_encoder = LinearEdgeEncoder(edge_dim, enc_dim_edge)
             if args.encoder.edge_encoder_bn:
-                self.edge_encoder_bn = BatchNorm1dNode(enc_dim_edge, 1e-5, 0.1)
+                self.edge_encoder_bn = BatchNorm1dEdge(enc_dim_edge, 1e-5, 0.1)
 
     def forward(self, batch):
         for module in self.children():
@@ -126,7 +149,7 @@ class GritTransformer(torch.nn.Module):
     2023.
 
     """
-    def __init__(self, args):
+    def __init__(self, args, include_decoder=True):
         super().__init__()
 
 
@@ -178,6 +201,11 @@ class GritTransformer(torch.nn.Module):
 
         layers = []
         for ll in range(num_layers):
+            # The last layer's edge output is never consumed downstream
+            # (only node features feed into the output heads), so skip
+            # creating O_e / norm_e parameters to avoid DDP unused-parameter
+            # errors.
+            is_last = (ll == num_layers - 1)
             layers.append(GritTransformerLayer(
                 in_dim=args.model.gt.dim_hidden,
                 out_dim=args.model.gt.dim_hidden,
@@ -188,14 +216,15 @@ class GritTransformer(torch.nn.Module):
                 layer_norm=args.model.gt.layer_norm,
                 batch_norm=args.model.gt.batch_norm,
                 residual=True,
-                norm_e=args.model.gt.attn.norm_e,
-                O_e=args.model.gt.attn.O_e,
+                norm_e=False if is_last else args.model.gt.attn.norm_e,
+                O_e=False if is_last else args.model.gt.attn.O_e,
                 cfg=args.model.gt,
             ))
 
         self.layers = nn.Sequential(*layers)
 
-        self.decoder = GraphHead(dim_inner, dim_out)
+        if include_decoder:
+            self.decoder = GraphHead(dim_inner, dim_out)
 
     def forward(self, batch):   
         """
@@ -214,6 +243,48 @@ class GritTransformer(torch.nn.Module):
             batch = module(batch)
 
         return batch
+
+def aggregate_pg(batch, mask_value=-1.0):
+    """Aggregate per-generator active power (PG) onto bus nodes.
+
+    In the homogeneous reference, PG is a direct bus feature visible to the
+    transformer alongside Pd, Qd, Vm, Va, etc.  In the heterogeneous
+    representation PG lives on separate generator nodes, so it must be
+    aggregated onto buses before the transformer can learn voltage-power
+    coupling.
+
+    Masked generators (where PG has been replaced by the mask value) are
+    excluded from the sum to avoid corrupting the aggregated signal.  Buses
+    where *all* connected generators are masked receive the mask value
+    instead, preserving a consistent "unknown" indicator.
+    """
+    gen_to_bus = batch["gen", "connected_to", "bus"].edge_index
+    gen_pg = batch["gen"].x[:, PG_H]
+    gen_masked = batch.mask_dict["gen"][:, PG_H]  # True = masked
+
+    # Zero out masked generators so they don't contribute to the sum
+    pg_clean = torch.where(gen_masked, torch.zeros_like(gen_pg), gen_pg)
+
+    pg_per_bus = scatter_add(
+        pg_clean,
+        gen_to_bus[1],
+        dim=0,
+        dim_size=batch["bus"].x.size(0),
+    )
+
+    # Check which buses have ALL generators masked (or no generators at all)
+    unmasked_count = scatter_add(
+        (~gen_masked).float(),
+        gen_to_bus[1],
+        dim=0,
+        dim_size=batch["bus"].x.size(0),
+    )
+    all_masked = unmasked_count == 0
+
+    # Set mask_value for fully-masked buses
+    pg_per_bus[all_masked] = mask_value
+
+    return pg_per_bus
 
 
 @MODELS_REGISTRY.register("GRIT")
@@ -266,8 +337,9 @@ class GritHeteroAdapter(torch.nn.Module):
             args.model.gt.dim_hidden = args.model.hidden_size
 
         # The original homogeneous GRIT
-        # (encoder + optional PE encoders + transformer layers + GraphHead)
-        self.grit = GritTransformer(args)
+        # (encoder + optional PE encoders + transformer layers)
+        # Decoder is excluded — this adapter provides its own per-type heads.
+        self.grit = GritTransformer(args, include_decoder=False)
 
         # Per-node-type output heads (replace GraphHead for hetero output)
         self.bus_head = nn.Sequential(
@@ -275,11 +347,17 @@ class GritHeteroAdapter(torch.nn.Module):
             nn.LeakyReLU(),
             nn.Linear(dim_inner, output_bus_dim),
         )
-        self.gen_head = nn.Sequential(
-            nn.Linear(input_gen_dim, dim_inner),
-            nn.LeakyReLU(),
-            nn.Linear(dim_inner, output_gen_dim),
-        )
+        # gen_head is only needed for tasks that require per-generator
+        # predictions (e.g. OPF cost computation). When output_gen_dim is 0
+        # or not set, skip it to avoid DDP unused-parameter errors.
+        if output_gen_dim and output_gen_dim > 0:
+            self.gen_head = nn.Sequential(
+                nn.Linear(input_gen_dim, dim_inner),
+                nn.LeakyReLU(),
+                nn.Linear(dim_inner, output_gen_dim),
+            )
+        else:
+            self.gen_head = None
 
     def forward(self, batch):
         """Forward pass on a heterogeneous power-grid batch.
@@ -293,8 +371,12 @@ class GritHeteroAdapter(torch.nn.Module):
             predicted output features.
         """
         # --- Extract bus-only homogeneous subgraph ---
+        # Aggregate generator PG onto buses
+        pg_per_bus = aggregate_pg(batch, mask_value=self.grit.mask_value[0].item())
+        bus_x = torch.cat([batch["bus"].x, pg_per_bus.unsqueeze(-1)], dim=-1)  # 15 → 16D
+        
         homo = Data(
-            x=batch["bus"].x,
+            x=bus_x,
             y=batch["bus"].y,
             edge_index=batch["bus", "connects", "bus"].edge_index,
             edge_attr=batch["bus", "connects", "bus"].edge_attr,
@@ -316,6 +398,6 @@ class GritHeteroAdapter(torch.nn.Module):
 
         # --- Per-type decoding ---
         bus_out = self.bus_head(homo.x)
-        gen_out = self.gen_head(batch["gen"].x)
+        gen_out = self.gen_head(batch["gen"].x) if self.gen_head is not None else batch["gen"].x
 
         return {"bus": bus_out, "gen": gen_out}

@@ -20,6 +20,8 @@ from gridfm_graphkit.datasets.globals import (
     # Output feature indices
     PG_OUT,
     QG_OUT,
+    PD_OUT,
+    QD_OUT,
     PG_OUT_GEN,
     # Generator feature indices
     PG_H,
@@ -306,6 +308,10 @@ class HeteroDataMVANormalizer(Normalizer):
         gen_output = output["gen"]
         bus_output[:, PG_OUT] *= self.baseMVA
         bus_output[:, QG_OUT] *= self.baseMVA
+        if bus_output.size(1) > PD_OUT:
+            bus_output[:, PD_OUT] *= self.baseMVA
+        if bus_output.size(1) > QD_OUT:
+            bus_output[:, QD_OUT] *= self.baseMVA
         gen_output[:, PG_OUT_GEN] *= self.baseMVA
 
     def get_stats(self) -> dict:
@@ -606,6 +612,10 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         # Scale per-unit power back to MW/Mvar
         bus_output[:, PG_OUT] *= b_bus
         bus_output[:, QG_OUT] *= b_bus
+        if bus_output.size(1) > PD_OUT:
+            bus_output[:, PD_OUT] *= b_bus
+        if bus_output.size(1) > QD_OUT:
+            bus_output[:, QD_OUT] *= b_bus
         gen_output[:, PG_OUT_GEN] *= b_gen
 
     def get_stats(self) -> dict:

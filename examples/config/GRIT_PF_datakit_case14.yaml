@@ -7,6 +7,7 @@ data:
   baseMVA: 100
   mask_type: rnd        # or determinstic
   mask_ratio: 0.5       # for random masking only
+  mask_value: -1
   normalization: HeteroDataMVANormalizer
   networks:
   - case14_ieee
@@ -29,13 +30,13 @@ model:
   # (P_E, Q_E, YFF_TT_R, YFF_TT_I, YFT_TF_R, YFT_TF_I, TAP, ANG_MIN, ANG_MAX, RATE_A)
   edge_dim: 10
   hidden_size: 496
-  # input_dim = bus feature count (used by GRIT core FeatureEncoder)
-  input_dim: 15
+  # input_dim = bus feature count + aggregated PG (used by GRIT core FeatureEncoder)
+  input_dim: 16
   # Hetero adapter head dimensions
-  input_bus_dim: 15
+  input_bus_dim: 16
   input_gen_dim: 6
-  output_bus_dim: 2
-  output_gen_dim: 1
+  output_bus_dim: 6    # [VM, VA, PG, QG, PD, QD]
+  output_gen_dim: 0    # PG predicted at bus level; no per-generator head needed
   num_layers: 7
   type: GRIT
   act: relu
@@ -77,15 +78,12 @@ training:
   batch_size: 8
   epochs: 500
   loss_weights:
+  - 0.99
   - 0.01
-  - 0.09
-  - 0.9
   losses:
   - PBE
-  - MaskedGenMSE
-  - MaskedBusMSE
+  - MaskedReconstructionMSE
   loss_args:
-  - {}
   - {}
   - {}
   accelerator: auto

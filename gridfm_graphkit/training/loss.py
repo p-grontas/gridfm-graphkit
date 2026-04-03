@@ -18,6 +18,8 @@ from gridfm_graphkit.datasets.globals import (
     VA_OUT,
     QG_OUT,
     PG_OUT,
+    PD_OUT,
+    QD_OUT,
     # Generator feature indices
     PG_H,
     # Edge feature indices
@@ -98,9 +100,12 @@ class MaskedGenMSE(torch.nn.Module):
         mask_dict,
         model=None,
     ):
+        gen_pred = pred_dict["gen"][:, : (PG_H + 1)]
+        gen_target = target_dict["gen"][:, : (PG_H + 1)]
+        mask = mask_dict["gen"][:, : (PG_H + 1)]
         loss = F.mse_loss(
-            pred_dict["gen"][mask_dict["gen"][:, : (PG_H + 1)]],
-            target_dict["gen"][mask_dict["gen"][:, : (PG_H + 1)]],
+            gen_pred[mask],
+            gen_target[mask],
             reduction=self.reduction,
         )
         return {"loss": loss, "Masked generator MSE loss": loss.detach()}
@@ -140,6 +145,81 @@ class MaskedBusMSE(torch.nn.Module):
             reduction=self.reduction,
         )
         return {"loss": loss, "Masked bus MSE loss": loss.detach()}
+
+
+@LOSS_REGISTRY.register("MaskedReconstructionMSE")
+class MaskedReconstructionMSE(BaseLoss):
+    """Unified masked MSE over bus-level quantities [VM, VA, PG, QG, PD, QD].
+
+    Mirrors the homogeneous reference MaskedMSE by combining bus predictions
+    and aggregated generator PG into a single prediction/target/mask tensor.
+    PG targets are aggregated from generator ground truth onto buses via
+    scatter_add; the bus-level PG mask is True when any generator at the bus
+    is masked, indicating that the model must reconstruct that quantity.
+
+    Replaces the separate MaskedBusMSE + MaskedGenMSE pair.
+    Requires output_bus_dim >= 6 so the bus head predicts
+    [VM, VA, PG, QG, PD, QD].
+    """
+
+    def __init__(self, loss_args, args):
+        super().__init__()
+        self.reduction = "mean"
+
+    def forward(
+        self,
+        pred_dict,
+        target_dict,
+        edge_index_dict,
+        edge_attr_dict,
+        mask_dict,
+        model=None,
+    ):
+        pred_bus = pred_dict["bus"]
+        target_bus = target_dict["bus"]
+        num_bus = target_bus.size(0)
+        gen_to_bus_ei = edge_index_dict[("gen", "connected_to", "bus")]
+
+        # --- Build target: [VM, VA, PG_agg, QG, PD, QD] ---
+        target_pg_agg = scatter_add(
+            target_dict["gen"][:, PG_H],
+            gen_to_bus_ei[1],
+            dim=0,
+            dim_size=num_bus,
+        )
+        target = torch.stack([
+            target_bus[:, VM_H],
+            target_bus[:, VA_H],
+            target_pg_agg,
+            target_bus[:, QG_H],
+            target_bus[:, PD_H],
+            target_bus[:, QD_H],
+        ], dim=1)
+
+        # --- Build mask: [N_bus, 6] ---
+        # PG bus-level mask: True if any generator at the bus has PG masked
+        gen_pg_masked = mask_dict["gen"][:, PG_H].float()
+        any_gen_masked = scatter_add(
+            gen_pg_masked,
+            gen_to_bus_ei[1],
+            dim=0,
+            dim_size=num_bus,
+        ) > 0
+
+        mask = torch.stack([
+            mask_dict["bus"][:, VM_H],
+            mask_dict["bus"][:, VA_H],
+            any_gen_masked,
+            mask_dict["bus"][:, QG_H],
+            mask_dict["bus"][:, PD_H],
+            mask_dict["bus"][:, QD_H],
+        ], dim=1)
+
+        # --- Prediction: [VM, VA, PG, QG, PD, QD] from bus head ---
+        pred = pred_bus[:, [VM_OUT, VA_OUT, PG_OUT, QG_OUT, PD_OUT, QD_OUT]]
+
+        loss = F.mse_loss(pred[mask], target[mask], reduction=self.reduction)
+        return {"loss": loss, "Masked reconstruction MSE loss": loss.detach()}
 
 
 @LOSS_REGISTRY.register("MSE")
@@ -361,7 +441,14 @@ class PBELoss(BaseLoss):
         bus_edge_attr = edge_attr_dict[("bus", "connects", "bus")]
         mask_bus = mask_dict["bus"]
 
-        # --- Voltage: use prediction where masked, target where known ---
+        # --- Clamp known values to ground truth ---
+        # In power flow, certain variables are "known" (unmasked) at each
+        # bus type (e.g. VM at PV buses, VA at REF).  The model only needs
+        # to predict *masked* unknowns; for everything else we substitute
+        # the ground truth so that errors in non-target outputs do not
+        # pollute the physics loss.  This matches the reference's
+        # ``temp_pred[unmasked] = target[unmasked]`` convention.
+
         Vm_pred = pred_bus[:, VM_OUT]
         Va_pred = pred_bus[:, VA_OUT]
         Vm_target = target_bus[:, VM_H]
@@ -378,12 +465,49 @@ class PBELoss(BaseLoss):
         V_conj = torch.conj(V)
 
         # --- Admittance matrix from bus-bus edge attrs ---
-        # Use Yff (diagonal-block) real/imag as the admittance entries
-        edge_complex = bus_edge_attr[:, YFF_TT_R] + 1j * bus_edge_attr[:, YFF_TT_I]
+        # The Y-bus matrix has off-diagonal AND diagonal entries.
+        #
+        # Off-diagonal: Y[from][to] = Yft, Y[to][from] = Ytf, stored in the
+        # YFT_TF columns of the edge attributes.
+        #
+        # Diagonal: Y[k][k] = sum of Yff/Ytt for all branches at bus k.
+        # The dataset stores Yff (forward edges) and Ytt (reverse edges) in
+        # the YFF_TT columns.  For every edge, YFF_TT at the *source* bus
+        # gives that branch's diagonal contribution at the source.  Summing
+        # over all edges with source == k yields the full branch-diagonal.
+        #
+        # The reference project loads a pre-built Y-bus (y_bus_data.parquet)
+        # that includes self-loops for diagonal entries.  Here we reconstruct
+        # the same structure from per-branch pi-model parameters.
+
+        # Off-diagonal admittance values
+        edge_offdiag = bus_edge_attr[:, YFT_TF_R] + 1j * bus_edge_attr[:, YFT_TF_I]
+
+        # Diagonal: aggregate Yff/Ytt to source bus of each edge
+        Y_diag_r = scatter_add(
+            bus_edge_attr[:, YFF_TT_R],
+            bus_edge_index[0],
+            dim=0,
+            dim_size=num_bus,
+        )
+        Y_diag_i = scatter_add(
+            bus_edge_attr[:, YFF_TT_I],
+            bus_edge_index[0],
+            dim=0,
+            dim_size=num_bus,
+        )
+        Y_diag = Y_diag_r + 1j * Y_diag_i
+
+        # Build complete Y-bus: off-diagonal edges + self-loops for diagonal
+        diag_idx = torch.arange(num_bus, device=bus_edge_index.device)
+        full_edge_index = torch.cat(
+            [bus_edge_index, torch.stack([diag_idx, diag_idx])], dim=1,
+        )
+        full_edge_values = torch.cat([edge_offdiag, Y_diag])
 
         Y_bus_sparse = to_torch_coo_tensor(
-            bus_edge_index,
-            edge_complex,
+            full_edge_index,
+            full_edge_values,
             size=(num_bus, num_bus),
         )
         Y_bus_conj = torch.conj(Y_bus_sparse)
@@ -392,19 +516,36 @@ class PBELoss(BaseLoss):
         S_injection = torch.diag(V) @ Y_bus_conj @ V_conj
 
         # --- Net power from predictions/targets ---
-        # Pg: aggregate generator predictions onto buses
+        # Pg: use bus head prediction where masked, ground truth where known.
+        # Ground truth is aggregated from generator targets onto buses.
         gen_to_bus_ei = edge_index_dict[("gen", "connected_to", "bus")]
-        Pg_per_bus = scatter_add(
-            pred_dict["gen"].squeeze(-1),
+        target_pg_agg = scatter_add(
+            target_dict["gen"][:, PG_H],
             gen_to_bus_ei[1],
             dim=0,
             dim_size=num_bus,
         )
+        gen_pg_masked = mask_dict["gen"][:, PG_H].float()
+        any_gen_masked = scatter_add(
+            gen_pg_masked,
+            gen_to_bus_ei[1],
+            dim=0,
+            dim_size=num_bus,
+        ) > 0
+        Pg_per_bus = torch.where(any_gen_masked, pred_bus[:, PG_OUT], target_pg_agg)
 
-        Pd = target_bus[:, PD_H]
-        Qd = target_bus[:, QD_H]
-
-        # Qg: use prediction if the model predicts it, else use target
+        # Pd, Qd, Qg: same clamp-to-ground-truth logic.  The size guard
+        # (``pred_bus.size(1) > *_OUT``) handles models with a narrow bus
+        # head (e.g. output_bus_dim=4) that don't predict PD/QD/QG; in that
+        # case the target is always used.
+        if pred_bus.size(1) > PD_OUT:
+            Pd = torch.where(mask_bus[:, PD_H], pred_bus[:, PD_OUT], target_bus[:, PD_H])
+        else:
+            Pd = target_bus[:, PD_H]
+        if pred_bus.size(1) > QD_OUT:
+            Qd = torch.where(mask_bus[:, QD_H], pred_bus[:, QD_OUT], target_bus[:, QD_H])
+        else:
+            Qd = target_bus[:, QD_H]
         if pred_bus.size(1) > QG_OUT:
             Qg = torch.where(mask_bus[:, QG_H], pred_bus[:, QG_OUT], target_bus[:, QG_H])
         else:
