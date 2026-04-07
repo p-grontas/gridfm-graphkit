@@ -1,8 +1,11 @@
 from gridfm_graphkit.datasets.hetero_powergrid_datamodule import LitGridHeteroDataModule
 from gridfm_graphkit.io.param_handler import NestedNamespace
+from gridfm_graphkit.io.registries import DATASET_WRAPPER_REGISTRY
 from gridfm_graphkit.training.callbacks import SaveBestModelStateDict
+import importlib
 import numpy as np
 import os
+import time
 import yaml
 import torch
 import pandas as pd
@@ -13,6 +16,86 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import MLFlowLogger
 import lightning as L
+
+
+def _load_plugins(plugins: list[str]) -> None:
+    """Import plugin packages so their registry decorators fire."""
+    for plugin_pkg in plugins:
+        try:
+            importlib.import_module(plugin_pkg)
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError(
+                f"Plugin package '{plugin_pkg}' could not be imported: {e}. "
+                "Make sure it is installed in the current environment.",
+            ) from e
+
+
+def _validate_dataset_wrapper(name: str | None) -> None:
+    """Raise a helpful error if *name* is not registered in DATASET_WRAPPER_REGISTRY."""
+    if name is None:
+        return
+    if name not in DATASET_WRAPPER_REGISTRY:
+        available = list(DATASET_WRAPPER_REGISTRY)
+        raise KeyError(
+            f"Dataset wrapper '{name}' is not registered. "
+            f"Available wrappers: {available}. "
+            "If it lives in a plugin package, pass it via --plugins.",
+        )
+
+
+def benchmark_cli(args):
+    """Benchmark train-dataloader iteration speed over one or more epochs."""
+    with open(args.config, "r") as f:
+        base_config = yaml.safe_load(f)
+
+    config_args = NestedNamespace(**base_config)
+
+    num_workers_override = getattr(args, "num_workers", None)
+    if num_workers_override is not None:
+        config_args.data.workers = num_workers_override
+
+    _load_plugins(getattr(args, "plugins", []))
+
+    dataset_wrapper = getattr(args, "dataset_wrapper", None)
+    dataset_wrapper_cache_dir = getattr(args, "dataset_wrapper_cache_dir", None)
+    _validate_dataset_wrapper(dataset_wrapper)
+
+    print("Setting up datamodule...")
+    t0 = time.perf_counter()
+    dm = LitGridHeteroDataModule(
+        config_args,
+        args.data_path,
+        dataset_wrapper=dataset_wrapper,
+        dataset_wrapper_cache_dir=dataset_wrapper_cache_dir,
+    )
+    dm.setup(stage="fit")
+    setup_time = time.perf_counter() - t0
+    print(f"  Setup time        : {setup_time:.2f}s")
+
+    loader = dm.train_dataloader()
+    num_batches = len(loader)
+    print(f"  Train batches     : {num_batches}")
+    print(f"  Batch size        : {config_args.training.batch_size}")
+    print(f"  Workers           : {config_args.data.workers}")
+    print(f"  Dataset wrapper   : {dataset_wrapper or 'none'}")
+    print()
+
+    epoch_times = []
+    for epoch in range(args.epochs):
+        t_start = time.perf_counter()
+        for _batch in loader:
+            pass
+        elapsed = time.perf_counter() - t_start
+        per_batch = elapsed / num_batches if num_batches > 0 else 0.0
+        epoch_times.append(elapsed)
+        print(
+            f"Epoch {epoch:>3}: {elapsed:7.3f}s total  "
+            f"{per_batch:.4f}s/batch  ({num_batches} batches)",
+        )
+
+    if args.epochs > 1:
+        avg = sum(epoch_times) / len(epoch_times)
+        print(f"\nAverage over {args.epochs} epochs: {avg:.3f}s")
 
 
 def get_training_callbacks(args):
@@ -41,6 +124,9 @@ def get_training_callbacks(args):
 
 
 def main_cli(args):
+    if getattr(args, "tf32", False):
+        torch.set_float32_matmul_precision("high")  # enables TF32 on Ampere+ GPUs
+
     logger = MLFlowLogger(
         save_dir=args.log_dir,
         experiment_name=args.exp_name,
@@ -55,16 +141,50 @@ def main_cli(args):
     L.seed_everything(config_args.seed, workers=True)
 
     normalizer_stats_path = getattr(args, "normalizer_stats", None)
+    dataset_wrapper = getattr(args, "dataset_wrapper", None)
+    dataset_wrapper_cache_dir = getattr(args, "dataset_wrapper_cache_dir", None)
+
+    # CLI --num_workers overrides the YAML value (useful for debugging with 0)
+    num_workers_override = getattr(args, "num_workers", None)
+    if num_workers_override is not None:
+        config_args.data.workers = num_workers_override
+
+    _load_plugins(getattr(args, "plugins", []))
+    _validate_dataset_wrapper(dataset_wrapper)
+
     litGrid = LitGridHeteroDataModule(
         config_args,
         args.data_path,
         normalizer_stats_path=normalizer_stats_path,
+        dataset_wrapper=dataset_wrapper,
+        dataset_wrapper_cache_dir=dataset_wrapper_cache_dir,
     )
     model = get_task(config_args, litGrid.data_normalizers)
     if args.command != "train":
         print(f"Loading model weights from {args.model_path}")
         state_dict = torch.load(args.model_path, map_location="cpu")
         model.load_state_dict(state_dict)
+
+    precision = "bf16-true" if getattr(args, "bfloat16", False) else None
+    if precision:
+        print("Using bfloat16 precision (via Lightning Trainer precision='bf16-true')")
+
+    compile_mode = getattr(args, "compile", None)
+    if compile_mode is not None:
+        if compile_mode in ("max-autotune", "max-autotune-no-cudagraphs"):
+            # Allow ATen GEMM as fallback so Triton configs that exceed GPU
+            # shared-memory limits (e.g. triton_mm OOM) are skipped gracefully
+            # instead of causing autotuning errors.
+            import torch._inductor.config as inductor_cfg
+
+            inductor_cfg.max_autotune_gemm_backends = "ATEN,TRITON"
+        print(f"Compiling model with torch.compile(mode='{compile_mode}')")
+        model.model = torch.compile(model.model, mode=compile_mode)
+
+    trainer_kwargs = {}
+    if precision:
+        trainer_kwargs["precision"] = precision
+    profiler = getattr(args, "profiler", None)
 
     trainer = L.Trainer(
         logger=logger,
@@ -75,6 +195,8 @@ def main_cli(args):
         default_root_dir=args.log_dir,
         max_epochs=config_args.training.epochs,
         callbacks=get_training_callbacks(config_args),
+        **trainer_kwargs,
+        profiler=profiler,
     )
     if args.command == "train" or args.command == "finetune":
         trainer.fit(model=model, datamodule=litGrid)
@@ -87,6 +209,8 @@ def main_cli(args):
             num_nodes=1,
             log_every_n_steps=1,
             default_root_dir=args.log_dir,
+            **trainer_kwargs,
+            profiler=profiler,
         )
         test_trainer.test(model=model, datamodule=litGrid)
 
@@ -119,6 +243,8 @@ def main_cli(args):
             num_nodes=1,
             log_every_n_steps=1,
             default_root_dir=args.log_dir,
+            **trainer_kwargs,
+            profiler=profiler,
         )
         predictions = predict_trainer.predict(model=model, datamodule=litGrid)
 

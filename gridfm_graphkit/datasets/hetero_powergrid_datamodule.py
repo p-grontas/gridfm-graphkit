@@ -1,9 +1,11 @@
 import json
 import torch
+import os
 from torch_geometric.loader import DataLoader
 from torch.utils.data import ConcatDataset
 from torch.utils.data import Subset
 import torch.distributed as dist
+from gridfm_graphkit.io.registries import DATASET_WRAPPER_REGISTRY
 from gridfm_graphkit.io.param_handler import (
     NestedNamespace,
     load_normalizer,
@@ -18,7 +20,6 @@ from gridfm_graphkit.datasets.powergrid_hetero_dataset import HeteroGridDatasetD
 import numpy as np
 import random
 import warnings
-import os
 import lightning as L
 from pathlib import Path
 from typing import List
@@ -89,9 +90,13 @@ class LitGridHeteroDataModule(L.LightningDataModule):
         args: NestedNamespace,
         data_dir: str = "./data",
         normalizer_stats_path: str = None,
+        dataset_wrapper: str = None,
+        dataset_wrapper_cache_dir: str = None,
     ):
         super().__init__()
         self.data_dir = data_dir
+        self.dataset_wrapper = dataset_wrapper
+        self.dataset_wrapper_cache_dir = dataset_wrapper_cache_dir
         self.batch_size = int(args.training.batch_size)
         self.split_by_load_scenario_idx = getattr(
             args.data,
@@ -165,6 +170,7 @@ class LitGridHeteroDataModule(L.LightningDataModule):
                     data_normalizer=data_normalizer,
                     transform=get_task_transforms(args=self.args),
                 )
+
             self.datasets.append(dataset)
 
             num_scenarios = self.args.data.scenarios[i]
@@ -177,20 +183,35 @@ class LitGridHeteroDataModule(L.LightningDataModule):
 
             # Create a subset
             all_indices = list(range(len(dataset)))
-            splits_dir = Path(data_path_network)
-            splits_dir = splits_dir / "splits"
+
 
             if self.split_from_existing_files is not None:
+                warnings.warn(
+                    "`data.scenarios` is ignored when `split_from_existing_files` is set; "
+                    "train/val/test scenario ids are loaded from the provided split files.",
+                )
+
+                if self.dataset_wrapper is not None:
+                    wrapper_cls = DATASET_WRAPPER_REGISTRY.get(self.dataset_wrapper)
+                    dataset = wrapper_cls(
+                        dataset,
+                        cache_dir=self.dataset_wrapper_cache_dir,
+                    )
+
                 (train_dataset, val_dataset, test_dataset), subset_indices = (
                     split_from_existing_files(
                         dataset,
-                        splits_dir,
                         self.split_from_existing_files,
                     )
                 )
                 train_scenario_ids = subset_indices["train"]
                 val_scenario_ids = subset_indices["val"]
                 test_scenario_ids = subset_indices["test"]
+                num_scenarios = int(
+                    np.unique(
+                        train_scenario_ids + val_scenario_ids + test_scenario_ids,
+                    ).shape[0],
+                )
             else:
                 # Random seed set before every shuffle for reproducibility in case the power grid datasets are analyzed in a different order
                 random.seed(self.args.seed)
@@ -199,8 +220,14 @@ class LitGridHeteroDataModule(L.LightningDataModule):
 
                 # load_scenario for each scenario in the subset
                 load_scenarios = dataset.load_scenarios[subset_indices]
+                
 
                 dataset = Subset(dataset, subset_indices)
+                
+                if self.dataset_wrapper is not None:
+                    wrapper_cls = DATASET_WRAPPER_REGISTRY.get(self.dataset_wrapper)
+                    dataset = wrapper_cls(dataset, cache_dir=self.dataset_wrapper_cache_dir)
+
 
                 # Random seed set before every split, same as above
                 np.random.seed(self.args.seed)
@@ -260,6 +287,11 @@ class LitGridHeteroDataModule(L.LightningDataModule):
                     saved_stats,
                 )
 
+            # Populate the wrapper cache now that the normalizer is fitted,
+            # so transform() has BaseMVA set when __getitem__ is called.
+            if self.dataset_wrapper is not None and hasattr(dataset, "_setup_cache"):
+                dataset._setup_cache()
+
             self.train_datasets.append(train_dataset)
             self.val_datasets.append(val_dataset)
             self.test_datasets.append(test_dataset)
@@ -275,7 +307,11 @@ class LitGridHeteroDataModule(L.LightningDataModule):
         is_rank0 = (
             not dist.is_available() or not dist.is_initialized() or dist.get_rank() == 0
         )
-        if is_rank0 and self.trainer is not None and self.trainer.logger is not None:
+        if (
+            is_rank0
+            and self.trainer is not None
+            and getattr(self.trainer, "logger", None) is not None
+        ):
             logger = self.trainer.logger
             if isinstance(logger, MLFlowLogger):
                 log_dir = os.path.join(
@@ -374,13 +410,34 @@ class LitGridHeteroDataModule(L.LightningDataModule):
             with open(splits_path, "w") as f:
                 json.dump(splits, f, indent=2)
 
+    def _dataloader_kwargs(self):
+        num_workers = self.args.data.workers
+        kwargs = dict(
+            num_workers=num_workers,
+            pin_memory=torch.cuda.is_available(),
+            persistent_workers=num_workers > 0,
+        )
+        # On Linux some HPC environments restrict passing open file descriptors
+        # via Unix socket ancillary data (SCM_RIGHTS), which causes
+        # "received 0 items of ancdata" with the default 'fork' start method.
+        # 'forkserver' avoids fd-passing by having a dedicated server process
+        # that re-opens shared memory objects by name instead.
+        if (
+            num_workers > 0
+            and torch.multiprocessing.get_start_method(allow_none=True) != "spawn"
+        ):
+            import platform
+
+            if platform.system() == "Linux":
+                kwargs["multiprocessing_context"] = "forkserver"
+        return kwargs
+
     def train_dataloader(self):
         return DataLoader(
             self.train_dataset_multi,
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=self.args.data.workers,
-            pin_memory=True,
+            **self._dataloader_kwargs(),
         )
 
     def val_dataloader(self):
@@ -388,8 +445,7 @@ class LitGridHeteroDataModule(L.LightningDataModule):
             self.val_dataset_multi,
             batch_size=self.batch_size,
             shuffle=False,
-            num_workers=self.args.data.workers,
-            pin_memory=True,
+            **self._dataloader_kwargs(),
         )
 
     def test_dataloader(self):
@@ -398,8 +454,7 @@ class LitGridHeteroDataModule(L.LightningDataModule):
                 i,
                 batch_size=self.batch_size,
                 shuffle=False,
-                num_workers=self.args.data.workers,
-                pin_memory=True,
+                **self._dataloader_kwargs(),
             )
             for i in self.test_datasets
         ]
@@ -410,8 +465,7 @@ class LitGridHeteroDataModule(L.LightningDataModule):
                 i,
                 batch_size=self.batch_size,
                 shuffle=False,
-                num_workers=self.args.data.workers,
-                pin_memory=True,
+                **self._dataloader_kwargs(),
             )
             for i in self.test_datasets
         ]

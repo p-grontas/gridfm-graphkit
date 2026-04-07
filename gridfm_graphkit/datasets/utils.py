@@ -3,6 +3,7 @@ from torch.utils.data import Subset
 from typing import Tuple
 from torch import Tensor
 import torch
+from pathlib import Path
 
 
 def split_dataset(
@@ -94,10 +95,14 @@ def split_dataset_by_load_scenario_idx(
 
 def split_from_existing_files(
     dataset,
-    save_to_folder: str,
-    splits_folder: str,
+    splits_folder: Path,
 ) -> Tuple[Subset, Subset, Subset]:
-    output=[]
+    """Build train/val/test subsets from split index files.
+
+    Expects `train.pt`, `val.pt`, and `test.pt` inside `splits_folder`.
+    Returns both the dataset subsets and the raw scenario ids per split.
+    """
+    output = []
 
     indices = {}
 
