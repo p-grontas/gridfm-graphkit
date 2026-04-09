@@ -338,7 +338,7 @@ class LossPerDim(BaseLoss):
 
 @LOSS_REGISTRY.register("QgViolationPenalty")
 class QgViolationPenaltyLoss(BaseLoss):
-    """Penalty on Qg values violating [Qmin, Qmax] limits."""
+    """Standard Mean Squared Error loss."""
 
     def __init__(self, loss_args, args):
         super().__init__()
@@ -353,25 +353,38 @@ class QgViolationPenaltyLoss(BaseLoss):
         model=None,
         x_dict=None,
     ):
+        # --- Qg limit violation mask ---
         Qg_pred = pred["bus"][:, QG_OUT]
         Qg_max = x_dict["bus"][:, MAX_QG_H]
         Qg_min = x_dict["bus"][:, MIN_QG_H]
 
-        # Qg is only relevant on generator-capable buses (PV and slack/REF).
-        if mask is not None and "PV" in mask and "REF" in mask:
-            qg_bus_mask = mask["PV"] | mask["REF"]
-        else:
-            qg_bus_mask = torch.ones_like(Qg_pred, dtype=torch.bool)
+        max_penalty_mask = (Qg_pred > Qg_max) 
+        min_penalty_mask = (Qg_pred < Qg_min)
 
-        # ReLU already zeroes non-violations; averaging over all relevant buses
-        # keeps the value finite even when there are no violations.
-        Qg_over = F.relu(Qg_pred - Qg_max)
-        Qg_under = F.relu(Qg_min - Qg_pred)
-        penalty_loss = (Qg_over + Qg_under)[qg_bus_mask].mean()
+        mask_PQ = mask["PQ"]  # PQ buses
+        mask_PV = mask["PV"]  # PV buses
+        mask_REF = mask["REF"]  # Reference buses
 
-        return {
-            "loss": penalty_loss,
-            "Qg Violation Penalty loss": penalty_loss.detach(),
-        }
+        loss = 0.0
+        # where there are violations, compute penalty loss
+        Qg_over = F.relu(Qg_pred - Qg_max)  # amount above max limit
+        Qg_under = F.relu(Qg_min - Qg_pred)  # amount below min limit
 
+        Qg_over = Qg_over[max_penalty_mask].mean()
+        Qg_under = Qg_under[min_penalty_mask].mean()
+        
+        if Qg_over!=Qg_over: # replacing nan with 0 
+            Qg_over = 0.0
+        if Qg_under!=Qg_under: # replacing nan with 0 
+            Qg_under = 0.0
+
+        penalty_loss = Qg_over + Qg_under            
+        loss += penalty_loss
+
+        try:
+            output = {"loss": loss, "Qg Violation Penalty loss": loss.detach()}
+        except:
+            output = {"loss": loss, "Qg Violation Penalty loss": loss}
+
+        return output
 
