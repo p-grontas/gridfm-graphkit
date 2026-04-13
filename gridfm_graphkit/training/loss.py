@@ -46,6 +46,7 @@ class BaseLoss(nn.Module, ABC):
         edge_attr=None,
         mask=None,
         model=None,
+        **kwargs,
     ):
         """
         Compute the loss.
@@ -82,6 +83,7 @@ class MaskedMSELoss(BaseLoss):
         edge_attr=None,
         mask=None,
         model=None,
+        **kwargs,
     ):
         loss = F.mse_loss(pred[mask], target[mask], reduction=self.reduction)
         return {"loss": loss, "Masked MSE loss": loss.detach()}
@@ -101,6 +103,7 @@ class MaskedGenMSE(torch.nn.Module):
         edge_attr,
         mask_dict,
         model=None,
+        **kwargs,
     ):
         gen_pred = pred_dict["gen"][:, : (PG_H + 1)]
         gen_target = target_dict["gen"][:, : (PG_H + 1)]
@@ -128,6 +131,7 @@ class MaskedBusMSE(torch.nn.Module):
         edge_attr,
         mask_dict,
         model=None,
+        **kwargs,
     ):
         if self.args.task == "OptimalPowerFlow":
             pred_cols = [VM_OUT, VA_OUT, QG_OUT]
@@ -176,6 +180,7 @@ class MaskedReconstructionMSE(BaseLoss):
         edge_attr_dict,
         mask_dict,
         model=None,
+        **kwargs,
     ):
         pred_bus = pred_dict["bus"]
         target_bus = target_dict["bus"]
@@ -240,6 +245,7 @@ class MSELoss(BaseLoss):
         edge_attr=None,
         mask=None,
         model=None,
+        **kwargs,
     ):
         loss = F.mse_loss(pred, target, reduction=self.reduction)
         return {"loss": loss, "MSE loss": loss.detach()}
@@ -331,6 +337,7 @@ class LayeredWeightedPhysicsLoss(BaseLoss):
         edge_attr=None,
         mask=None,
         model=None,
+        **kwargs,
     ):
         total_loss = 0.0
         loss_details = {}
@@ -381,6 +388,7 @@ class LossPerDim(BaseLoss):
         edge_attr,
         mask_dict,
         model=None,
+        **kwargs,
     ):
         if self.dim == "VM":
             temp_pred = pred_dict["bus"][:, VM_OUT]
