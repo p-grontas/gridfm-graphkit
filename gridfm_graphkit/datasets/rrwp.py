@@ -2,7 +2,11 @@ from typing import Any, Optional
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
-from torch_sparse import SparseTensor
+
+try:
+    from torch_sparse import SparseTensor
+except ImportError:
+    SparseTensor = None
 
 
 def add_node_attr(data: Data, value: Any, attr_name: Optional[str] = None) -> Data:
@@ -30,6 +34,12 @@ def add_full_rrwp(
 ):
     num_nodes = data.num_nodes
     edge_index, edge_weight = data.edge_index, data.edge_weight
+
+    if SparseTensor is None:
+        raise ImportError(
+            "torch-sparse is required for RRWP positional encodings. "
+            "Install it with: pip install torch-sparse",
+        )
 
     adj = SparseTensor.from_edge_index(
         edge_index,
