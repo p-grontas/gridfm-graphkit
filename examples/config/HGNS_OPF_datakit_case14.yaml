@@ -34,13 +34,16 @@ training:
   loss_weights:
   - 0.1
   - 0.1
-  - 0.8
+  - 0.75
+  - 0.001
   losses:
   - LayeredWeightedPhysics
   - MaskedGenMSE
   - MaskedBusMSE
+  - QgViolationPenalty
   loss_args:
   - base_weight: 0.5
+  - {}
   - {}
   - {}
   accelerator: auto

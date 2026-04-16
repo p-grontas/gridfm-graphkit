@@ -28,7 +28,7 @@ optimizer:
   lr_decay: 0.7
   lr_patience: 5
 training:
-  batch_size: 64
+  batch_size: 16
   epochs: 200
   loss_weights:
   - 0.1
