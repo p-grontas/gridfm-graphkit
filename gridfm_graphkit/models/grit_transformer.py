@@ -271,7 +271,7 @@ def aggregate_pg(batch, mask_value=-1.0):
     if scatter_add is None:
         raise ImportError(
             "torch-scatter is required for the GRIT modules but is not installed. "
-            "Install it with: pip install torch-scatter"
+            "Install it with: pip install torch-scatter",
         )
 
     gen_to_bus = batch["gen", "connected_to", "bus"].edge_index
