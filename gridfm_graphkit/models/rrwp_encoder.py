@@ -4,13 +4,37 @@ The RRWP encoder for GRIT (ours)
 
 import torch
 from torch import nn
-import torch_sparse
+
+try:
+    import torch_sparse
+except ImportError:
+    torch_sparse = None
 
 from torch_geometric.utils import (
     add_self_loops,
 )
-from torch_scatter import scatter
+
+try:
+    from torch_scatter import scatter
+except ImportError:
+    scatter = None
+
 import warnings
+
+_MISSING_MSG = (
+    "{pkg} is required for the RRWP / GRIT modules but is not installed. "
+    "Install it with: pip install {pkg}"
+)
+
+
+def _check_sparse():
+    if torch_sparse is None:
+        raise ImportError(_MISSING_MSG.format(pkg="torch-sparse"))
+
+
+def _check_scatter():
+    if scatter is None:
+        raise ImportError(_MISSING_MSG.format(pkg="torch-scatter"))
 
 
 def full_edge_index(edge_index, batch=None):
@@ -25,6 +49,8 @@ def full_edge_index(edge_index, batch=None):
     Returns:
         Complementary edge index.
     """
+
+    _check_scatter()
 
     if batch is None:
         batch = edge_index.new_zeros(edge_index.max().item() + 1)
@@ -169,6 +195,7 @@ class RRWPLinearEdgeEncoder(torch.nn.Module):
                 num_nodes=batch.num_nodes,
                 fill_value=0.0,
             )
+            _check_sparse()
             out_idx, out_val = torch_sparse.coalesce(
                 torch.cat([edge_index, rrwp_idx], dim=1),
                 torch.cat([edge_attr, rrwp_val], dim=0),
@@ -183,6 +210,7 @@ class RRWPLinearEdgeEncoder(torch.nn.Module):
             # zero padding to fully-connected graphs
             out_idx = torch.cat([out_idx, edge_index_full], dim=1)
             out_val = torch.cat([out_val, edge_attr_pad], dim=0)
+            _check_sparse()
             out_idx, out_val = torch_sparse.coalesce(
                 out_idx,
                 out_val,
