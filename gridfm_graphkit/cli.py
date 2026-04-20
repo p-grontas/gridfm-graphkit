@@ -199,7 +199,11 @@ def main_cli(args):
         training_callbacks = training_callbacks + [epoch_timer]
 
     _strategy = config_args.training.strategy
-    if isinstance(_strategy, str) and _strategy in ("auto", "ddp", "ddp_find_unused_parameters_true"):
+    if isinstance(_strategy, str) and _strategy in (
+        "auto",
+        "ddp",
+        "ddp_find_unused_parameters_true",
+    ):
         _strategy = DDPStrategy(find_unused_parameters=True)
 
     trainer = L.Trainer(
