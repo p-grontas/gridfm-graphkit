@@ -80,6 +80,12 @@ def main():
         "--compute_dc_ac_metrics",
         action="store_true",
     )
+    train_parser.add_argument(
+        "--report-performance",
+        dest="report_performance",
+        action="store_true",
+        help="Print the last training epoch time and a single test metric to stdout.",
+    )
 
     # ---- FINETUNE SUBCOMMAND ----
     finetune_parser = subparsers.add_parser("finetune", help="Run fine-tuning")
@@ -126,6 +132,12 @@ def main():
     finetune_parser.add_argument(
         "--compute_dc_ac_metrics",
         action="store_true",
+    )
+    finetune_parser.add_argument(
+        "--report-performance",
+        dest="report_performance",
+        action="store_true",
+        help="Print the last training epoch time and a single test metric to stdout.",
     )
 
     # ---- EVALUATE SUBCOMMAND ----
