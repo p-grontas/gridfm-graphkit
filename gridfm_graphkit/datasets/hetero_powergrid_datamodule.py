@@ -218,9 +218,17 @@ class LitGridHeteroDataModule(L.LightningDataModule):
                 random.shuffle(all_indices)
                 subset_indices = all_indices[:num_scenarios]
 
-                # load_scenario for each scenario in the subset
-                load_scenarios = dataset.load_scenarios[subset_indices]
-                
+                load_scenarios = None
+                if self.split_by_load_scenario_idx:
+                    if not hasattr(dataset, "load_scenarios"):
+                        raise ValueError(
+                            "`data.split_by_load_scenario_idx=true` requires "
+                            "`load_scenario_idx` in raw bus data so "
+                            "`processed/load_scenarios.pt` can be created.",
+                        )
+                    # load_scenario for each scenario in the subset
+                    load_scenarios = dataset.load_scenarios[subset_indices]
+
 
                 dataset = Subset(dataset, subset_indices)
                 
