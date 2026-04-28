@@ -177,6 +177,10 @@ def main_cli(args):
     if num_workers_override is not None:
         config_args.data.workers = num_workers_override
 
+    batch_size_override = getattr(args, "batch_size", None)
+    if batch_size_override is not None:
+        config_args.training.batch_size = batch_size_override
+
     _load_plugins(getattr(args, "plugins", []))
     _validate_dataset_wrapper(dataset_wrapper)
 
@@ -222,12 +226,16 @@ def main_cli(args):
     if epoch_timer is not None:
         training_callbacks = training_callbacks + [epoch_timer]
 
+    _accelerator = config_args.training.accelerator
     _strategy = config_args.training.strategy
-    if isinstance(_strategy, str) and _strategy in (
+    # if mps is available and accelerator is auto, explicitely set accelerator to mps to select the right strategy in the next block
+    if _accelerator == "auto" and torch.backends.mps.is_available(): 
+        _accelerator = "mps"
+    if _accelerator not in ("mps", "cpu") and isinstance(_strategy, str) and _strategy in (
         "auto",
         "ddp",
         "ddp_find_unused_parameters_true",
-    ):
+    ): # when using mps, we don't want to use ddp.
         _strategy = DDPStrategy(find_unused_parameters=True)
 
     trainer = L.Trainer(
