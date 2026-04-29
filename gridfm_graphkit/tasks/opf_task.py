@@ -87,14 +87,14 @@ class OptimalPowerFlowTask(ReconstructionTask):
         c2 = batch.x_dict["gen"][:, C2_H]
         target_pg = batch.y_dict["gen"].squeeze()
         pred_pg = output["gen"].squeeze()
-        gen_cost_gt = c0 + c1 * target_pg + c2 * target_pg**2
-        gen_cost_pred = c0 + c1 * pred_pg + c2 * pred_pg**2
+        gen_cost_gt = (c0 + c1 * target_pg + c2 * target_pg**2) # assumes all branches are on!
+        gen_cost_pred = (c0 + c1 * pred_pg + c2 * pred_pg**2) # assumes all branches are on!
 
         gen_batch = batch.batch_dict["gen"]  # shape: [N_gen_total]
 
         cost_gt = scatter_add(gen_cost_gt, gen_batch, dim=0)
         cost_pred = scatter_add(gen_cost_pred, gen_batch, dim=0)
-
+        
         optimality_gap = torch.mean(torch.abs((cost_pred - cost_gt) / cost_gt * 100))
 
         agg_gen_on_bus = scatter_add(
