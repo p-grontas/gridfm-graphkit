@@ -53,7 +53,7 @@ def generate_opf_test_data(config_path: str = "integrationtests/default_opf.yaml
     and 2 topology variants.
     """
     config = _base_config()
-    config.setdefault("settings", {})["mode"] = "opf"
+    config["settings"]["mode"] = "opf"
 
     with open(config_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
@@ -68,5 +68,5 @@ def generate_opf_test_data(config_path: str = "integrationtests/default_opf.yaml
 
 
 if __name__ == "__main__":
-    generate_pf_test_data()
+    #generate_pf_test_data()
     generate_opf_test_data()
