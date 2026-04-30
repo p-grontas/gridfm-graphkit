@@ -190,7 +190,7 @@ def test_train_opf(cleanup_opf_test_artifacts):
     if not os.path.exists(opf_data_dir) or not os.listdir(opf_data_dir):
         print("OPF data directory not found or empty, downloading pre-generated data...")
 
-        gdrive_file_id = "1Ow4SYGAYQ4mZad4yNKYmXvG24BbPs8Pj"
+        gdrive_file_id = "1-pgoUqVcTfqZCOFrpMoL4VgPkHrjq3z9"
         zip_filename = "case14_ieee.10000_scenarios_2_variants_opf.zip"
         gdrive_url = f"https://drive.google.com/uc?id={gdrive_file_id}"
 
