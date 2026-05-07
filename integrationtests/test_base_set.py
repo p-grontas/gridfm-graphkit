@@ -8,15 +8,44 @@ import shutil
 import zipfile
 import gdown
 import tempfile
+import statistics
 
 
 def execute_and_live_output(cmd) -> None:
     subprocess.run(cmd, text=True, shell=True, check=True)
 
 
+def collect_metrics_from_log(log_base: str, metric_keys: list) -> dict:
+    """Find the latest run's metrics CSV and return a dict of {metric: value}."""
+    exp_dirs = glob.glob(os.path.join(log_base, "*"))
+    assert len(exp_dirs) > 0, f"No experiment directories found in {log_base}/"
+    latest_exp_dir = sorted(exp_dirs, key=os.path.getctime)[-1]
+    run_dirs = glob.glob(os.path.join(latest_exp_dir, "*"))
+    assert len(run_dirs) > 0, f"No run directories found in {latest_exp_dir}"
+    latest_run_dir = max(run_dirs, key=os.path.getmtime)
+    metrics_file = os.path.join(latest_run_dir, "artifacts", "test", "case14_ieee_metrics.csv")
+    assert os.path.exists(metrics_file), f"Metrics file not found: {metrics_file}"
+    df = pd.read_csv(metrics_file)
+    return dict(zip(df["Metric"], df["Value"].astype(float)))
+
+
+def print_calibration_stats(all_runs: list, metric_keys: list) -> None:
+    """Print mean +/- std across calibration runs for each metric."""
+    print("\n===== Calibration Results =====")
+    for key in metric_keys:
+        values = [run[key] for run in all_runs if key in run]
+        if not values:
+            print(f"  {key}: no data")
+            continue
+        mean = statistics.mean(values)
+        std = statistics.stdev(values) if len(values) > 1 else 0.0
+        print(f"  {key}: mean={mean:.4f}  std={std:.4f}  min={min(values):.4f}  max={max(values):.4f}")
+    print("==============================\n")
+
+
 def prepare_training_config():
     """
-    Modify the PF training config to set epochs to 2 for testing.
+    Modify the PF training config to set epochs to 20 and hidden_size to 12 for testing.
     """
     config_path = "examples/config/HGNS_PF_datakit_case14.yaml"
 
@@ -25,20 +54,23 @@ def prepare_training_config():
 
     if "training" not in config:
         config["training"] = {}
+    if "model" not in config:
+        config["model"] = {}
 
-    config["training"]["epochs"] = 2
+    config["training"]["epochs"] = 20
+    config["model"]["hidden_size"] = 12
 
     with open(config_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
-    print(f"Training config updated: epochs set to {config['training']['epochs']}")
+    print(f"Training config updated: epochs set to {config['training']['epochs']}, hidden_size set to {config['model']['hidden_size']}")
 
     return config_path
 
 
 def prepare_opf_training_config():
     """
-    Modify the OPF training config to set epochs to 2 for testing.
+    Modify the OPF training config to set epochs to 20 and hidden_size to 12 for testing.
     """
     config_path = "examples/config/HGNS_OPF_datakit_case14.yaml"
 
@@ -47,13 +79,16 @@ def prepare_opf_training_config():
 
     if "training" not in config:
         config["training"] = {}
+    if "model" not in config:
+        config["model"] = {}
 
-    config["training"]["epochs"] = 2
+    config["training"]["epochs"] = 20
+    config["model"]["hidden_size"] = 12
 
     with open(config_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
-    print(f"OPF training config updated: epochs set to {config['training']['epochs']}")
+    print(f"OPF training config updated: epochs set to {config['training']['epochs']}, hidden_size set to {config['model']['hidden_size']}")
 
     return config_path
 
@@ -86,7 +121,7 @@ def cleanup_test_artifacts():
             shutil.rmtree(d, ignore_errors=True)
 
 
-def test_train(cleanup_test_artifacts):
+def test_train(cleanup_test_artifacts, calibrate_runs):
     """
     Integration test for gridfm-datakit data generation and gridfm-graphkit training.
 
@@ -94,7 +129,13 @@ def test_train(cleanup_test_artifacts):
     1. Generate power grid data using gridfm-datakit
     2. Train a model using gridfm-graphkit
     3. Validate the PBE Mean metric
+
+    Pass --calibrate N to pytest (e.g. pytest --calibrate 5) to run N training passes
+    and print metric mean/std without asserting range bounds.
     """
+
+    n_runs = max(calibrate_runs, 1)
+    pf_metric_keys = ["PBE Mean"]
 
     data_dir = "data_out"
 
@@ -118,43 +159,27 @@ def test_train(cleanup_test_artifacts):
         print(f"Data directory '{data_dir}' already exists, skipping download.")
 
     training_config_path = prepare_training_config()
+    all_runs = []
 
-    execute_and_live_output(
-        f"gridfm_graphkit train "
-        f"--config {training_config_path} "
-        f"--data_path data_out/ "
-        f"--exp_name exp1 "
-        f"--run_name run1 "
-        f"--log_dir logs",
-    )
+    for run_i in range(n_runs):
+        print(f"\n--- PF Training run {run_i + 1}/{n_runs} ---")
+        execute_and_live_output(
+            f"gridfm_graphkit train "
+            f"--config {training_config_path} "
+            f"--data_path data_out/ "
+            f"--exp_name exp1 "
+            f"--run_name run{run_i + 1} "
+            f"--log_dir logs",
+        )
+        metrics = collect_metrics_from_log("logs", pf_metric_keys)
+        all_runs.append(metrics)
 
-    log_base = "logs"
+    if calibrate_runs > 0:
+        print_calibration_stats(all_runs, pf_metric_keys)
+        return
 
-    exp_dirs = glob.glob(os.path.join(log_base, "*"))
-    assert len(exp_dirs) > 0, "No experiment directories found in logs/"
-
-    latest_exp_dir = sorted(exp_dirs, key=os.path.getctime)[-1]
-
-    run_dirs = glob.glob(os.path.join(latest_exp_dir, "*"))
-    assert len(run_dirs) > 0, f"No run directories found in {latest_exp_dir}"
-
-    latest_run_dir = max(run_dirs, key=os.path.getmtime)
-
-    metrics_file = os.path.join(
-        latest_run_dir,
-        "artifacts",
-        "test",
-        "case14_ieee_metrics.csv",
-    )
-
-    assert os.path.exists(metrics_file), f"Metrics file not found: {metrics_file}"
-
-    df = pd.read_csv(metrics_file)
-
-    pbe_mean_row = df[df["Metric"] == "PBE Mean"]
-    assert len(pbe_mean_row) > 0, "PBE Mean metric not found in CSV"
-
-    pbe_mean_value = float(pbe_mean_row.iloc[0]["Value"])
+    metrics = all_runs[0]
+    pbe_mean_value = metrics["PBE Mean"]
 
     assert 1.1 <= pbe_mean_value <= 2.9, (
         f"PBE Mean value {pbe_mean_value} is outside acceptable range [1.1, 2.9]"
@@ -175,7 +200,7 @@ def cleanup_opf_test_artifacts():
             shutil.rmtree(d, ignore_errors=True)
 
 
-def test_train_opf(cleanup_opf_test_artifacts):
+def test_train_opf(cleanup_opf_test_artifacts, calibrate_runs):
     """
     Integration test for OPF data download and gridfm-graphkit OPF training.
 
@@ -183,14 +208,31 @@ def test_train_opf(cleanup_opf_test_artifacts):
     1. Download pre-generated OPF power grid data from Google Drive
     2. Train a model using gridfm-graphkit with the OPF config
     3. Validate OPF-specific metrics
+
+    Pass --calibrate N to pytest (e.g. pytest --calibrate 5) to run N training passes
+    and print metric mean/std without asserting range bounds.
     """
+
+    n_runs = max(calibrate_runs, 1)
+    opf_metric_keys = [
+        "Avg. active res. (MW)",
+        "Avg. reactive res. (MVar)",
+        "RMSE PG generators (MW)",
+        "Mean optimality gap (%)",
+        "Mean branch thermal violation from (MVA)",
+        "Mean branch thermal violation to (MVA)",
+        "Mean branch angle difference violation (radians)",
+        "Mean Qg violation PV buses",
+        "Mean Qg violation REF buses",
+        "Mean Qg violation",
+    ]
 
     opf_data_dir = "data_out_opf"
 
     if not os.path.exists(opf_data_dir) or not os.listdir(opf_data_dir):
         print("OPF data directory not found or empty, downloading pre-generated data...")
 
-        gdrive_file_id = "1p5f5mRvmBQh8lZpIyWWbTbU42aHAIsdT"
+        gdrive_file_id = "1p5f5mRvmBQh8lZpIyWWbTbU42aHAIsdT"  # pragma: allowlist secret
         zip_filename = "case14_ieee.10000_scenarios_2_variants_opf.zip"
         gdrive_url = f"https://drive.google.com/uc?id={gdrive_file_id}"
 
@@ -209,39 +251,26 @@ def test_train_opf(cleanup_opf_test_artifacts):
         print(f"OPF data directory '{opf_data_dir}' already exists, skipping download.")
 
     training_config_path = prepare_opf_training_config()
+    all_runs = []
 
-    execute_and_live_output(
-        f"gridfm_graphkit train "
-        f"--config {training_config_path} "
-        f"--data_path {opf_data_dir}/ "
-        f"--exp_name exp_opf "
-        f"--run_name run1 "
-        f"--log_dir logs_opf",
-    )
+    for run_i in range(n_runs):
+        print(f"\n--- OPF Training run {run_i + 1}/{n_runs} ---")
+        execute_and_live_output(
+            f"gridfm_graphkit train "
+            f"--config {training_config_path} "
+            f"--data_path {opf_data_dir}/ "
+            f"--exp_name exp_opf "
+            f"--run_name run{run_i + 1} "
+            f"--log_dir logs_opf",
+        )
+        metrics = collect_metrics_from_log("logs_opf", opf_metric_keys)
+        all_runs.append(metrics)
 
-    log_base = "logs_opf"
+    if calibrate_runs > 0:
+        print_calibration_stats(all_runs, opf_metric_keys)
+        return
 
-    exp_dirs = glob.glob(os.path.join(log_base, "*"))
-    assert len(exp_dirs) > 0, "No experiment directories found in logs_opf/"
-
-    latest_exp_dir = sorted(exp_dirs, key=os.path.getctime)[-1]
-
-    run_dirs = glob.glob(os.path.join(latest_exp_dir, "*"))
-    assert len(run_dirs) > 0, f"No run directories found in {latest_exp_dir}"
-
-    latest_run_dir = max(run_dirs, key=os.path.getmtime)
-
-    metrics_file = os.path.join(
-        latest_run_dir,
-        "artifacts",
-        "test",
-        "case14_ieee_metrics.csv",
-    )
-
-    assert os.path.exists(metrics_file), f"Metrics file not found: {metrics_file}"
-
-    df = pd.read_csv(metrics_file)
-    metrics = dict(zip(df["Metric"], df["Value"].astype(float)))
+    metrics = all_runs[0]
 
     checks = {
         "Avg. active res. (MW)": (0.0, 2.0),
