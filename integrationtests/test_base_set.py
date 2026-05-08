@@ -8,7 +8,8 @@ import shutil
 import zipfile
 import gdown
 import tempfile
-import statistics
+import numpy as np
+from scipy import stats
 
 
 def execute_and_live_output(cmd) -> None:
@@ -30,17 +31,32 @@ def collect_metrics_from_log(log_base: str, metric_keys: list) -> dict:
 
 
 def print_calibration_stats(all_runs: list, metric_keys: list) -> None:
-    """Print mean +/- std across calibration runs for each metric."""
-    print("\n===== Calibration Results =====")
+    """
+    Print per-metric stats across calibration runs:
+      - std with Bessel's correction (ddof=1)
+      - two-sided 95% CI using Student-t distribution (t_{0.975, n-1})
+    """
+    n = len(all_runs)
+    t_crit = stats.t.ppf(0.975, df=max(n - 1, 1))  # t_{0.975, n-1}
+    col_w = max(len(k) for k in metric_keys) + 2
+    header = f"  {'Metric':<{col_w}}  {'Mean':>10}  {'Std(ddof=1)':>12}  {'CI 95% lo':>10}  {'CI 95% hi':>10}"
+    print(f"\n===== Calibration Results (n={n}, t_crit={t_crit:.4f}) =====")
+    print(header)
+    print("  " + "-" * (len(header) - 2))
     for key in metric_keys:
         values = [run[key] for run in all_runs if key in run]
         if not values:
-            print(f"  {key}: no data")
+            print(f"  {key:<{col_w}}  {'no data':>10}")
             continue
-        mean = statistics.mean(values)
-        std = statistics.stdev(values) if len(values) > 1 else 0.0
-        print(f"  {key}: mean={mean:.4f}  std={std:.4f}  min={min(values):.4f}  max={max(values):.4f}")
-    print("==============================\n")
+        arr = np.array(values, dtype=float)
+        mean = float(np.mean(arr))
+        std = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+        me = t_crit * std / np.sqrt(len(arr))  # margin of error
+        lo, hi = mean - me, mean + me
+        print(
+            f"  {key:<{col_w}}  {mean:>10.4f}  {std:>12.4f}  {lo:>10.4f}  {hi:>10.4f}"
+        )
+    print("=" * (len(header)) + "\n")
 
 
 def prepare_training_config():
