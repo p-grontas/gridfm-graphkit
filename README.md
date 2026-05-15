@@ -31,6 +31,8 @@ Install gridfm-graphkit in editable mode
 pip install -e .
 ```
 
+**`torch-scatter` is a required dependency.** It cannot be bundled in `pyproject.toml` because the correct wheel depends on your PyTorch and CUDA versions, so it must be installed separately.
+
 Get PyTorch + CUDA version for torch-scatter
 ```bash
 TORCH_CUDA_VERSION=$(python -c "import torch; print(torch.__version__ + ('+cpu' if torch.version.cuda is None else ''))")
