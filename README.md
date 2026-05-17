@@ -11,6 +11,8 @@
 [![DOI](https://zenodo.org/badge/1007159095.svg)](https://doi.org/10.5281/zenodo.17016737)
 [![Docs](https://img.shields.io/badge/docs-available-brightgreen)](https://gridfm.github.io/gridfm-graphkit/)
 ![Coverage](https://img.shields.io/badge/coverage-83%25-yellowgreen)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12802/badge)](https://www.bestpractices.dev/projects/12802)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/gridfm/gridfm-graphkit/badge)](https://scorecard.dev/viewer/?uri=github.com/gridfm/gridfm-graphkit)
 ![Python](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.12-blue)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 
