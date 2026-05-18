@@ -222,10 +222,10 @@ def test_train_pf(cleanup_test_artifacts, calibrate_runs, ci_level):
 
         pbe_mean_value = metrics["PBE Mean"]
         try:
-            assert -0.0171 <= pbe_mean_value <= 0.8610, (
-                f"PBE Mean value {pbe_mean_value} is outside 95% CI [-0.0171, 0.8610]"
+            assert 0.2042 <= pbe_mean_value <= 0.6397, (
+                f"PBE Mean value {pbe_mean_value} is outside 95% CI [0.2042, 0.6397]"
             )
-            print(f"PBE Mean value {pbe_mean_value} is within 95% CI [-0.0171, 0.8610] (attempt {attempt})")
+            print(f"PBE Mean value {pbe_mean_value} is within 95% CI [0.2042, 0.6397] (attempt {attempt})")
             last_error = None
             break
         except AssertionError as e:
