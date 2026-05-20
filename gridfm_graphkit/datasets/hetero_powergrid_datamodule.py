@@ -92,11 +92,13 @@ class LitGridHeteroDataModule(L.LightningDataModule):
         normalizer_stats_path: str = None,
         dataset_wrapper: str = None,
         dataset_wrapper_cache_dir: str = None,
+        multiprocessing_context: str = "spawn",
     ):
         super().__init__()
         self.data_dir = data_dir
         self.dataset_wrapper = dataset_wrapper
         self.dataset_wrapper_cache_dir = dataset_wrapper_cache_dir
+        self.multiprocessing_context = multiprocessing_context
         self.batch_size = int(args.training.batch_size)
         self.split_by_load_scenario_idx = getattr(
             args.data,
@@ -425,20 +427,8 @@ class LitGridHeteroDataModule(L.LightningDataModule):
             pin_memory=torch.cuda.is_available(),
             persistent_workers=num_workers > 0,
         )
-        # Use 'fork' on Linux. It avoids the forkserver intermediary pipe which
-        # is fragile when the process has many threads (e.g. OpenBLAS). In
-        # container environments (Kubernetes) fork works correctly. On
-        # traditional HPC systems with strict fd-passing restrictions the
-        # original 'forkserver' may be needed, but the pipe truncation it
-        # produces under thread pressure is worse than the ancdata warning.
-        if (
-            num_workers > 0
-            and torch.multiprocessing.get_start_method(allow_none=True) != "spawn"
-        ):
-            import platform
-
-            if platform.system() == "Linux":
-                kwargs["multiprocessing_context"] = "fork"
+        if num_workers > 0:
+            kwargs["multiprocessing_context"] = self.multiprocessing_context
         return kwargs
 
     def train_dataloader(self):
