@@ -242,7 +242,6 @@ def main_cli(args):
     if _accelerator not in ("mps", "cpu") and isinstance(_strategy, str) and _strategy in (
         "auto",
         "ddp",
-        "ddp_find_unused_parameters_true",
     ): # when using mps, we don't want to use ddp.
         _strategy = DDPStrategy(find_unused_parameters=False)
 
