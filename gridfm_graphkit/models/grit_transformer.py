@@ -404,9 +404,14 @@ class GritHeteroAdapter(torch.nn.Module):
         )
 
         # Forward positional-encoding attributes if present
-        for attr in ("pestat_RWSE", "rrwp", "rrwp_index", "rrwp_val", "log_deg", "deg"):
+        for attr in ("pestat_RWSE", "rrwp", "log_deg", "deg"):
             if hasattr(batch["bus"], attr):
                 setattr(homo, attr, getattr(batch["bus"], attr))
+
+        # RRWP relative PE is stored as a dedicated edge type for correct batching
+        if ("bus", "rrwp", "bus") in batch.edge_types:
+            homo.rrwp_index = batch["bus", "rrwp", "bus"].edge_index
+            homo.rrwp_val = batch["bus", "rrwp", "bus"].edge_attr
 
         # --- Run GRIT encoder + PE encoders + transformer layers ---
         homo = self.grit.encoder(homo)

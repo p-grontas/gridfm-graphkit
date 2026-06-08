@@ -26,7 +26,10 @@ class CachedPosencTransform:
     Args:
         transform: The inner PE transform (e.g. ComputePosencStat).
         cache_dir: Directory to store cached PE tensors.
-        cached_attrs: List of attribute names to cache (e.g. ["pestat_RWSE"]).
+        cached_attrs: List of attribute names to cache on the bus node store
+            (e.g. ["pestat_RWSE"]).
+        cached_edge_type: Optional edge type tuple (e.g. ("bus", "rrwp", "bus"))
+            whose edge_index and edge_attr should also be cached.
         key_attr: Attribute on the data object used as the cache key.
             Must be a scalar tensor (e.g. scenario_id).
     """
@@ -36,11 +39,13 @@ class CachedPosencTransform:
         transform,
         cache_dir: str,
         cached_attrs: list[str],
+        cached_edge_type: tuple[str, str, str] | None = None,
         key_attr: str = "scenario_id",
     ):
         self.transform = transform
         self.cache_dir = cache_dir
         self.cached_attrs = cached_attrs
+        self.cached_edge_type = cached_edge_type
         self.key_attr = key_attr
         os.makedirs(cache_dir, exist_ok=True)
 
@@ -53,7 +58,12 @@ class CachedPosencTransform:
         cached = torch.load(cache_path, weights_only=True)
         if isinstance(data, HeteroData):
             for attr, val in cached.items():
-                data["bus"][attr] = val
+                if attr == "_edge_type_index":
+                    data[self.cached_edge_type].edge_index = val
+                elif attr == "_edge_type_attr":
+                    data[self.cached_edge_type].edge_attr = val
+                else:
+                    data["bus"][attr] = val
         else:
             for attr, val in cached.items():
                 setattr(data, attr, val)
@@ -75,6 +85,18 @@ class CachedPosencTransform:
         for attr in self.cached_attrs:
             if hasattr(target, attr):
                 to_cache[attr] = getattr(target, attr)
+
+        # Cache edge-type data (RRWP sparse index + values)
+        if (
+            self.cached_edge_type is not None
+            and isinstance(data, HeteroData)
+            and self.cached_edge_type in data.edge_types
+        ):
+            edge_store = data[self.cached_edge_type]
+            if hasattr(edge_store, "edge_index"):
+                to_cache["_edge_type_index"] = edge_store.edge_index
+            if hasattr(edge_store, "edge_attr"):
+                to_cache["_edge_type_attr"] = edge_store.edge_attr
 
         if not to_cache:
             return

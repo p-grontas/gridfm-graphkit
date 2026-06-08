@@ -173,7 +173,8 @@ class LitGridHeteroDataModule(L.LightningDataModule):
                     pe_transform = CachedPosencTransform(
                         pe_transform,
                         cache_dir,
-                        cached_attrs=["rrwp", "rrwp_index", "rrwp_val", "log_deg", "deg"],
+                        cached_attrs=["rrwp", "log_deg", "deg"],
+                        cached_edge_type=("bus", "rrwp", "bus"),
                     )
                 if dataset.transform is None:
                     dataset.transform = pe_transform

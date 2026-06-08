@@ -176,17 +176,23 @@ class ComputePosencStat(BaseTransform):
             cfg=self.cfg,
         )
 
-        # Copy computed PE attributes back onto the HeteroData bus store
-        pe_attrs = [
+        # Copy computed PE attributes back onto the HeteroData.
+        # Node-level attrs go on the bus store; the sparse RRWP index/val
+        # are stored as a dedicated edge type so PyG batches them correctly
+        # (edge_index needs cat_dim=1 + node-count incrementing).
+        node_pe_attrs = [
             "pestat_RWSE",  # RWSE
-            "rrwp",
-            "rrwp_index",
-            "rrwp_val",  # RRWP
+            "rrwp",  # RRWP absolute (node-level diagonal)
             "log_deg",
             "deg",  # degree info from RRWP
         ]
-        for attr in pe_attrs:
+        for attr in node_pe_attrs:
             if hasattr(bus_data, attr):
                 data["bus"][attr] = getattr(bus_data, attr)
+
+        # RRWP relative PE: sparse [2, E] index + [E, K] values → edge type
+        if hasattr(bus_data, "rrwp_index") and hasattr(bus_data, "rrwp_val"):
+            data["bus", "rrwp", "bus"].edge_index = bus_data.rrwp_index
+            data["bus", "rrwp", "bus"].edge_attr = bus_data.rrwp_val
 
         return data
