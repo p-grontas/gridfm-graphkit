@@ -24,7 +24,7 @@ data:
     # the L2 norm of their multi-step random walk probability vector.
     # Original graph edges and self-loops are always retained regardless of
     # rank.  This provides sparse attention that interpolates between:
-    #   topk=0 (or omitted): full RRWP — all N^2 pairs (dense attention)
+    #   topk=0 (or omitted): full RRWP - all N^2 pairs (dense attention)
     #   topk=K: each node attends to its K structurally most important
     #           neighbors plus the original graph edges
     # For case14 (14 buses), topk=5 retains ~36% of all pairs + graph edges,

@@ -7,8 +7,12 @@ from torch_geometric.data import HeteroData
 from torch_geometric.utils import remove_self_loops
 
 
-def _topology_fingerprint(data, cached_edge_type=None, use_admittance=False,
-                          admittance_remove_self_loops=True):
+def _topology_fingerprint(
+    data,
+    cached_edge_type=None,
+    use_admittance=False,
+    admittance_remove_self_loops=True,
+):
     """Compute a short hash that uniquely identifies the graph topology.
 
     The fingerprint captures everything that determines the positional
@@ -38,8 +42,11 @@ def _topology_fingerprint(data, cached_edge_type=None, use_admittance=False,
         edge_attr = getattr(data, "edge_attr", None)
 
     h = hashlib.sha256()
-    h.update(num_nodes.to_bytes(4, "little") if isinstance(num_nodes, int)
-             else int(num_nodes).to_bytes(4, "little"))
+    h.update(
+        num_nodes.to_bytes(4, "little")
+        if isinstance(num_nodes, int)
+        else int(num_nodes).to_bytes(4, "little"),
+    )
     h.update(edge_index.cpu().numpy().tobytes())
 
     # Include admittance values in the fingerprint when they affect the PE
@@ -49,7 +56,7 @@ def _topology_fingerprint(data, cached_edge_type=None, use_admittance=False,
         else:
             # Yft at indices 4, 5
             g, b = edge_attr[:, 4], edge_attr[:, 5]
-        edge_weight = torch.sqrt(g ** 2 + b ** 2)
+        edge_weight = torch.sqrt(g**2 + b**2)
 
         if admittance_remove_self_loops:
             _, edge_weight = remove_self_loops(edge_index, edge_weight)

@@ -168,7 +168,9 @@ class LitGridHeteroDataModule(L.LightningDataModule):
                 pe_transform = ComputePosencStat(pe_types=["RRWP"], cfg=self.args.data)
                 if getattr(self.args.data.posenc_RRWP, "cache", False):
                     cache_dir = make_pe_cache_dir(
-                        dataset.processed_dir, "RRWP", self.args.data,
+                        dataset.processed_dir,
+                        "RRWP",
+                        self.args.data,
                     )
                     pe_transform = CachedPosencTransform(
                         pe_transform,
@@ -185,7 +187,9 @@ class LitGridHeteroDataModule(L.LightningDataModule):
                 pe_transform = ComputePosencStat(pe_types=["RWSE"], cfg=self.args.data)
                 if getattr(self.args.data.posenc_RWSE, "cache", False):
                     cache_dir = make_pe_cache_dir(
-                        dataset.processed_dir, "RWSE", self.args.data,
+                        dataset.processed_dir,
+                        "RWSE",
+                        self.args.data,
                     )
                     pe_transform = CachedPosencTransform(
                         pe_transform,

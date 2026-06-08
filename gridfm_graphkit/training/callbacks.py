@@ -105,4 +105,3 @@ class SaveLastModelStateDict(Callback):
         os.makedirs(model_dir, exist_ok=True)
         model_path = os.path.join(model_dir, self.filename)
         torch.save(pl_module.state_dict(), model_path)
-
