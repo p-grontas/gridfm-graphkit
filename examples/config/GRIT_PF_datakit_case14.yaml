@@ -21,6 +21,7 @@ data:
     ksteps: 21
   posenc_RWSE:
     enable: true
+    cache: true   # cache the computed positional encoding at first pass (if false computes every access)
     kernel:
       times: 21
 model:

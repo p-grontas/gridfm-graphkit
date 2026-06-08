@@ -18,6 +18,10 @@ from gridfm_graphkit.datasets.utils import (
 from gridfm_graphkit.datasets.powergrid_hetero_dataset import HeteroGridDatasetDisk
 
 from gridfm_graphkit.datasets.posenc_stats import ComputePosencStat
+from gridfm_graphkit.datasets.cached_transform import (
+    CachedPosencTransform,
+    make_pe_cache_dir,
+)
 
 import torch_geometric.transforms as T
 
@@ -162,12 +166,30 @@ class LitGridHeteroDataModule(L.LightningDataModule):
 
             if ("posenc_RRWP" in self.args.data) and self.args.data.posenc_RRWP.enable:
                 pe_transform = ComputePosencStat(pe_types=["RRWP"], cfg=self.args.data)
+                if getattr(self.args.data.posenc_RRWP, "cache", False):
+                    cache_dir = make_pe_cache_dir(
+                        dataset.processed_dir, "RRWP", self.args.data,
+                    )
+                    pe_transform = CachedPosencTransform(
+                        pe_transform,
+                        cache_dir,
+                        cached_attrs=["rrwp", "rrwp_index", "rrwp_val", "log_deg", "deg"],
+                    )
                 if dataset.transform is None:
                     dataset.transform = pe_transform
                 else:
                     dataset.transform = T.Compose([pe_transform, dataset.transform])
             if ("posenc_RWSE" in self.args.data) and self.args.data.posenc_RWSE.enable:
                 pe_transform = ComputePosencStat(pe_types=["RWSE"], cfg=self.args.data)
+                if getattr(self.args.data.posenc_RWSE, "cache", False):
+                    cache_dir = make_pe_cache_dir(
+                        dataset.processed_dir, "RWSE", self.args.data,
+                    )
+                    pe_transform = CachedPosencTransform(
+                        pe_transform,
+                        cache_dir,
+                        cached_attrs=["pestat_RWSE"],
+                    )
                 if dataset.transform is None:
                     dataset.transform = pe_transform
                 else:
