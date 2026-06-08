@@ -82,3 +82,52 @@ class SaveBestModelStateDict(Callback):
             # Save the model's state_dict
             model_path = os.path.join(model_dir, self.filename)
             torch.save(pl_module.state_dict(), model_path)
+
+
+class SaveLastModelStateDict(Callback):
+    def __init__(self, filename: str = "last_model_state_dict.pt"):
+        self.filename = filename
+
+    @rank_zero_only
+    def on_train_epoch_end(self, trainer, pl_module):
+        logger = trainer.logger
+        if isinstance(logger, MLFlowLogger):
+            model_dir = os.path.join(
+                logger.save_dir,
+                logger.experiment_id,
+                logger.run_id,
+                "artifacts",
+                "model",
+            )
+        else:
+            model_dir = os.path.join(logger.save_dir, "model")
+
+        os.makedirs(model_dir, exist_ok=True)
+        model_path = os.path.join(model_dir, self.filename)
+        torch.save(pl_module.state_dict(), model_path)
+
+class FreezeMaskTokens(Callback):
+    """Inject pre-trained mask tokens and freeze them.
+
+    Replaces nn.Parameter with a registered buffer so DDP does not expect
+    gradients for these tensors.
+    """
+
+    def __init__(self, mask_state_path: str):
+        super().__init__()
+        self.mask_state_path = mask_state_path
+
+    def setup(self, trainer, pl_module, stage=None):
+        if stage != "fit":
+            return
+        saved = torch.load(self.mask_state_path, map_location="cpu")
+        model = pl_module.model
+
+        for name in ("bus_mask_token", "edge_mask_token", "gen_mask_token"):
+            key = f"model.{name}"
+            if key in saved and hasattr(model, name):
+                tensor = saved[key]
+                # Remove the nn.Parameter and re-register as a buffer so DDP
+                # won't include it in gradient reduction.
+                delattr(model, name)
+                model.register_buffer(name, tensor)
