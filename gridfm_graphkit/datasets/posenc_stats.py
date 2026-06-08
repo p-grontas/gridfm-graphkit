@@ -11,7 +11,7 @@ except ImportError:
     scatter_add = None
 
 from functools import partial
-from gridfm_graphkit.datasets.rrwp import add_full_rrwp
+from gridfm_graphkit.datasets.rrwp import add_full_rrwp, add_topk_rrwp
 
 from torch_geometric.transforms import BaseTransform
 from torch_geometric.data import Data, HeteroData
@@ -54,13 +54,24 @@ def compute_posenc_stats(data, pe_types, cfg):
 
     if "RRWP" in pe_types:
         param = cfg.posenc_RRWP
-        transform = partial(
-            add_full_rrwp,
-            walk_length=param.ksteps,
-            attr_name_abs="rrwp",
-            attr_name_rel="rrwp",
-            add_identity=True,
-        )
+        topk = getattr(param, "topk", 0)
+        if topk and topk > 0:
+            transform = partial(
+                add_topk_rrwp,
+                walk_length=param.ksteps,
+                topk=topk,
+                attr_name_abs="rrwp",
+                attr_name_rel="rrwp",
+                add_identity=True,
+            )
+        else:
+            transform = partial(
+                add_full_rrwp,
+                walk_length=param.ksteps,
+                attr_name_abs="rrwp",
+                attr_name_rel="rrwp",
+                add_identity=True,
+            )
         data = transform(data)
 
     # Random Walks.

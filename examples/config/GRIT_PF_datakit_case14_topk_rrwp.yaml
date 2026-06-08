@@ -1,0 +1,159 @@
+callbacks:
+  patience: 100
+  tol: 0
+  freeze_mask: None # path to .pt weight file if wanting to freeze to learned values
+task:
+  task_name: PowerFlow
+data:
+  baseMVA: 100
+  mask_type: rnd        # or determinstic
+  mask_ratio: 0.5       # for random masking only
+  mask_value: -1
+  # use_learnable_mask: when true, replaces the fixed mask_value scalar with
+  # a per-feature learnable parameter (nn.Parameter) for each node/edge type.
+  # The transform still zeroes out masked positions, and the model injects the
+  # learned token additively in the forward pass.  mask_value is ignored.
+  use_learnable_mask: false
+  # use_max_basemva (legacy): when true, baseMVA is computed as the absolute
+  # maximum of all non-zero Pd, Qd, Pg, Qg values.  Superseded by
+  # basemva_mode; kept for backward compatibility.  If basemva_mode is set
+  # explicitly, this flag is ignored.
+  use_max_basemva: true
+  # basemva_mode: controls how the per-unit base power (baseMVA) is computed
+  # during normalizer fitting.  Choices:
+  #   "percentile"  - 95th percentile of non-zero |Pd|, |Qd|, |Pg|, |Qg|
+  #                   (per-generator Pg).  Default when neither flag is set.
+  #   "abs_max"     - max of absolute non-zero values (equivalent to legacy
+  #                   use_max_basemva: true).
+  #   "reference"   - aggregates generator Pg onto buses (sum per bus), then
+  #                   takes the plain .max() over [Pd, Qd, Pg_agg, Qg].
+  #                   This matches the homogeneous reference normalizer and
+  #                   produces identical feature scales when the underlying
+  #                   power system data is the same.
+  basemva_mode: reference
+  normalization: HeteroDataMVANormalizer
+  mask_ref_vm: false           # match reference PF masking at REF buses
+  networks:
+  - case14_ieee
+  scenarios:
+  - 5000
+  test_ratio: 0.1
+  val_ratio: 0.1
+  workers: 4
+  posenc_RRWP:
+    enable: true
+    ksteps: 21
+    cache: true
+    # topk: Number of highest-ranked neighbors to retain per node based on
+    # the L2 norm of their multi-step random walk probability vector.
+    # Original graph edges and self-loops are always retained regardless of
+    # rank.  This provides sparse attention that interpolates between:
+    #   topk=0 (or omitted): full RRWP — all N^2 pairs (dense attention)
+    #   topk=K: each node attends to its K structurally most important
+    #           neighbors plus the original graph edges
+    # For case14 (14 buses), topk=5 retains ~36% of all pairs + graph edges,
+    # providing global reach while being significantly sparser than full.
+    topk: 5
+  posenc_RWSE:
+    enable: false
+    cache: true
+    kernel:
+      times: 21
+model:
+  # homo_compat: when true, the GritHeteroAdapter remaps the heterogeneous
+  # bus features (15D) and edge features (10D) to the 9D / 2D layout used by
+  # the homogeneous reference model: bus x = [Pd, Qd, Pg_agg, Qg, Vm, Va,
+  # PQ, PV, REF], edge = [Yft_r, Yft_i].  This forces input_dim=9 and
+  # edge_dim=2 regardless of what is set below.
+  homo_compat: true
+  # homo_compat_topology: when true, the ConvertToYBusTopology transform is
+  # applied before masking.  It merges parallel branches into a single Y-bus
+  # admittance per bus pair, adds self-loop diagonal entries (Yff + GS + jBS),
+  # and outputs 2D [G, B] edge features.  Implies homo_compat: true.
+  # Positional encodings (RWSE/RRWP) are computed after this transform so
+  # they reflect the final graph topology.
+  homo_compat_topology: true
+  # mask_ref_vm: when false, voltage magnitude (Vm) at the reference/slack bus
+  # is never masked, matching the convention of the homogeneous reference
+  # where the slack bus Vm is always known.  When true, Vm at REF buses can
+  # be masked like any other bus.
+  mask_ref_vm: false
+  attention_head: 8
+  dropout: 0.1
+  # edge_dim must match the bus-bus edge feature count after transforms
+  # (P_E, Q_E, YFF_TT_R, YFF_TT_I, YFT_TF_R, YFT_TF_I, TAP, ANG_MIN, ANG_MAX, RATE_A)
+  edge_dim: 10
+  hidden_size: 496
+  # input_dim = bus feature count + aggregated PG (used by GRIT core FeatureEncoder)
+  input_dim: 16
+  # Hetero adapter head dimensions
+  input_bus_dim: 16
+  input_gen_dim: 6
+  output_bus_dim: 6    # [VM, VA, PG, QG, PD, QD]
+  output_gen_dim: 0    # PG predicted at bus level; no per-generator head needed
+  num_layers: 7
+  type: GRIT
+  act: relu
+  encoder:
+    node_encoder: true
+    edge_encoder: true
+    node_encoder_name: Linear
+    node_encoder_bn: true
+    edge_encoder_bn: true
+    posenc_RWSE:
+      # kernel.times is synced automatically from data.posenc_RWSE.kernel.times
+      pe_dim: 20
+      raw_norm_type: batchnorm
+  gt:
+    layer_type: GritTransformer
+    # dim_hidden is synced automatically from model.hidden_size
+    layer_norm: false
+    batch_norm: true
+    update_e: true
+    attn_dropout: 0.2
+    attn:
+      clamp: 5.
+      act: relu
+      # full_attn: false because the Top-K RRWP sparsification already
+      # determines the attention pattern.  The RRWPLinearEdgeEncoder will
+      # merge the sparse RRWP edges with original graph edges without
+      # padding to a fully-connected graph.
+      full_attn: false
+      edge_enhance: true
+      O_e: true
+      norm_e: true
+      # norm_last_layer: controls whether the final transformer layer
+      # creates O_e (linear projection) and batch_norm parameters for edge
+      # features.  When false, the last layer skips these to avoid DDP
+      # unused-parameter errors, since only node features feed into the
+      # output heads and the last layer's edge output is discarded.  When
+      # true, all layers are identical (matching the reference architecture),
+      # but requires strategy: ddp_find_unused_parameters_true in DDP.
+      norm_last_layer: true
+      signed_sqrt: true
+      bn_momentum: 0.1
+      bn_no_runner: false
+optimizer:
+  beta1: 0.9
+  beta2: 0.999
+  learning_rate: 0.0001
+  lr_decay: 0.7
+  lr_patience: 10
+seed: 0
+training:
+  batch_size: 8
+  epochs: 500
+  num_nodes: 1
+  loss_weights:
+  - 0.99
+  - 0.01
+  losses:
+  - PBE
+  - MaskedReconstructionMSE
+  loss_args:
+  - {}
+  - {}
+  accelerator: auto
+  devices: auto
+  strategy: auto
+verbose: true

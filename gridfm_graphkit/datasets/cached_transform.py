@@ -153,7 +153,11 @@ def make_pe_cache_dir(processed_dir: str, pe_type: str, cfg) -> str:
         fingerprint = f"k{kernel_times}"
     elif pe_type == "RRWP":
         ksteps = cfg.posenc_RRWP.ksteps
-        fingerprint = f"k{ksteps}"
+        topk = getattr(cfg.posenc_RRWP, "topk", 0)
+        if topk and topk > 0:
+            fingerprint = f"k{ksteps}_topk{topk}"
+        else:
+            fingerprint = f"k{ksteps}"
     else:
         fingerprint = "default"
 
