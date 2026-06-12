@@ -25,9 +25,9 @@ jobs:
 
           echo "Tag detected: $TAG"
 
-          # Enforce strict semver: vX.Y.Z where X,Y,Z are integers
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Invalid tag format. Expected vX.Y.Z"
+          # Enforce strict format: vX.Y.Z or vX.Y.ZrcN where X,Y,Z,N are integers
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(rc[0-9]+)?$ ]]; then
+            echo "Invalid tag format. Expected vX.Y.Z or vX.Y.ZrcN"
             exit 1
           fi
 
