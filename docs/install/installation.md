@@ -1,6 +1,6 @@
 # Installation
 
-The steps below mirror the [README](https://github.com/gridfm/gridfm-graphkit/blob/main/README.md#installation). Run them from the root of a local clone or source checkout of the repository.
+The steps below mirror the [README](https://github.com/gridfm/gridfm-graphkit/blob/main/README.md#installation).
 
 Create and activate a virtual environment (make sure you use the right python version = 3.10, 3.11 or 3.12. I highly recommend 3.12)
 
@@ -9,10 +9,10 @@ python -m venv venv
 source venv/bin/activate
 ```
 
-Install gridfm-graphkit in editable mode
+Install gridfm-graphkit from PyPI
 
 ```bash
-pip install -e .
+pip install gridfm-graphkit
 ```
 
 **`torch-scatter` is a required dependency.** It cannot be bundled in `pyproject.toml` because the correct wheel depends on your PyTorch and CUDA versions, so it must be installed separately.
@@ -33,5 +33,5 @@ pip install torch-scatter -f https://data.pyg.org/whl/torch-${TORCH_CUDA_VERSION
 For documentation generation and unit testing, install with the optional `dev` and `test` extras:
 
 ```bash
-pip install -e .[dev,test]
+pip install "gridfm-graphkit[dev,test]"
 ```
