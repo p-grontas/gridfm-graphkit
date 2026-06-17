@@ -433,7 +433,16 @@ class PowerFlowTask(ReconstructionTask):
         bus_edge_index = batch.edge_index_dict[("bus", "connects", "bus")] # from and to buses
         bus_edge_attr = batch.edge_attr_dict[("bus", "connects", "bus")] # edge attributes (admittance) of the bus connections
 
-        Pft, Qft = branch_flow_layer(output["bus"], bus_edge_index, bus_edge_attr) # compute the branch flows
+        target, gen_to_bus_index, agg_gen_on_bus = _build_bus_target(batch, num_bus)
+        eval_bus = _clamp_known_to_ground_truth(
+            output["bus"],
+            target,
+            batch,
+            gen_to_bus_index,
+            num_bus,
+        )
+
+        Pft, Qft = branch_flow_layer(eval_bus, bus_edge_index, bus_edge_attr) # compute the branch flows
         P_in, Q_in = node_injection_layer(Pft, Qft, bus_edge_index, num_bus) # compute the node injections
         residual_P, residual_Q = node_residuals_layer( # compute the node residuals
             P_in,
