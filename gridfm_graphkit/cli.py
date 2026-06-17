@@ -25,7 +25,9 @@ from lightning.pytorch.strategies import DDPStrategy
 import lightning as L
 
 
-def _normalize_loaded_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+def _normalize_loaded_state_dict_keys(
+    state_dict: dict[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
     """Map legacy torch.compile checkpoint keys to the canonical model namespace."""
     has_compiled_prefix = any(key.startswith("model._orig_mod.") for key in state_dict)
     if not has_compiled_prefix:
@@ -163,7 +165,7 @@ def main_cli(args):
         run_name=args.run_name,
     )
 
-    # When using torch.compile with Triton, dynamic graph support can cause 
+    # When using torch.compile with Triton, dynamic graph support can cause
     # out-of-memory errors during autotuning on some kernels.
     # Disabling dynamic graph support allows those kernels
     # to be skipped gracefully instead of causing errors.
@@ -238,12 +240,17 @@ def main_cli(args):
     _accelerator = config_args.training.accelerator
     _strategy = config_args.training.strategy
     # if mps is available and accelerator is auto, explicitely set accelerator to mps to select the right strategy in the next block
-    if _accelerator == "auto" and torch.backends.mps.is_available(): 
+    if _accelerator == "auto" and torch.backends.mps.is_available():
         _accelerator = "mps"
-    if _accelerator not in ("mps", "cpu") and isinstance(_strategy, str) and _strategy in (
-        "auto",
-        "ddp",
-    ): # when using mps, we don't want to use ddp.
+    if (
+        _accelerator not in ("mps", "cpu")
+        and isinstance(_strategy, str)
+        and _strategy
+        in (
+            "auto",
+            "ddp",
+        )
+    ):  # when using mps, we don't want to use ddp.
         _strategy = DDPStrategy(find_unused_parameters=False)
 
     trainer = L.Trainer(

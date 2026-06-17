@@ -28,4 +28,3 @@ def calibrate_runs(request):
 def ci_level(request):
     """Confidence interval level requested via --ci (default 0.995)."""
     return request.config.getoption("--ci")
-

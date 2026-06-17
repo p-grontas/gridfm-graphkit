@@ -22,12 +22,14 @@ def _warn_mp_context_on_linux(mp_context):
             stacklevel=2,
         )
 
+
 def is_lsf():
     return (
         os.environ.get("LSB_JOBID") is not None
         and os.environ.get("LSB_MCPU_HOSTS") is not None
         and "LSF_ENVDIR" in os.environ  # strong LSF indicator
     )
+
 
 def fix_infiniband():
     """Configure NCCL to skip Ethernet-only IB ports on this host."""
@@ -70,6 +72,7 @@ def set_env():
         "ib,bond"  # avoids using docker of loopback interface
     )
     os.environ["NCCL_IB_CUDA_SUPPORT"] = "1"  # Force use of infiniband
+
 
 def main():
     """Parse CLI arguments and dispatch to the selected GridFM subcommand."""
