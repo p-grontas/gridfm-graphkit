@@ -185,7 +185,7 @@ class MaskedReconstructionMSE(BaseLoss):
         edge_attr_dict,
         mask_dict,
         model=None,
-        **kwargs,
+        x_dict=None,
     ):
         pred_bus = pred_dict["bus"]
         target_bus = target_dict["bus"]
