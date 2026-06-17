@@ -76,7 +76,7 @@ model:
       # determines the attention pattern.  The RRWPLinearEdgeEncoder will
       # merge the sparse RRWP edges with original graph edges without
       # padding to a fully-connected graph.
-      full_attn: true
+      full_attn: false  # true only for full RRWP
       edge_enhance: true
       O_e: true
       norm_e: true
