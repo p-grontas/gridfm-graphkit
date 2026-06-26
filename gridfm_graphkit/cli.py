@@ -255,6 +255,10 @@ def main_cli(args):
         default_root_dir=args.log_dir,
         max_epochs=config_args.training.epochs,
         callbacks=training_callbacks,
+        deterministic=(
+            True if getattr(args, "deterministic", None) == "true"
+            else (getattr(args, "deterministic", None) or False)
+        ),
         **trainer_kwargs,
         profiler=profiler,
     )

@@ -107,6 +107,19 @@ def main():
         default=False,
         help="Enable TF32 on Ampere+ GPUs via torch.set_float32_matmul_precision('high').",
     )
+    _deterministic_kwargs = dict(
+        dest="deterministic",
+        type=str,
+        nargs="?",
+        const="warn",
+        default=None,
+        choices=["true", "warn"],
+        help=(
+            "Enable deterministic CUDA/cuDNN algorithms via Lightning Trainer(deterministic=...). "
+            "Pass --deterministic (alone) for 'warn' mode, or --deterministic true for strict. "
+            "Requires CUBLAS_WORKSPACE_CONFIG to be set (e.g. ':4096:8') for CUDA>=10.2."
+        ),
+    )
     _mp_context_kwargs = dict(
         dest="mp_context",
         type=str,
@@ -174,6 +187,7 @@ def main():
         help="Print the last training epoch time and a single test metric to stdout.",
     )
     train_parser.add_argument("--mp_context", **_mp_context_kwargs)
+    train_parser.add_argument("--deterministic", **_deterministic_kwargs)
 
     # ---- FINETUNE SUBCOMMAND ----
     finetune_parser = subparsers.add_parser("finetune", help="Run fine-tuning")
