@@ -552,8 +552,8 @@ class PBELoss(BaseLoss):
         )
         Y_bus_conj = torch.conj(Y_bus_sparse)
 
-        # Complex power injection:  S_inj = diag(V) * conj(Y) * conj(V)
-        S_injection = torch.diag(V) @ Y_bus_conj @ V_conj
+        # Complex power injection:  S_inj = V .* (conj(Y) @ conj(V))
+        S_injection = V * (Y_bus_conj @ V_conj)
 
         # --- Net power from predictions/targets ---
         # Pg: use bus head prediction where masked, ground truth where known.

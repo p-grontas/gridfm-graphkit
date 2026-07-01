@@ -172,18 +172,11 @@ class GritTransformer(torch.nn.Module):
         dropout = args.model.dropout
         num_layers = args.model.num_layers
         self.mask_dim = getattr(args.data, "mask_dim", 6)
-        self.mask_value = getattr(args.data, "mask_value", -1.0)
-        self.learn_mask = getattr(args.data, "learn_mask", False)
-        if self.learn_mask:
-            self.mask_value = nn.Parameter(
-                torch.randn(self.mask_dim) + self.mask_value,
-                requires_grad=True,
-            )
-        else:
-            self.mask_value = nn.Parameter(
-                torch.zeros(self.mask_dim) + self.mask_value,
-                requires_grad=False,
-            )
+        mask_val = getattr(args.data, "mask_value", -1.0)
+        self.register_buffer(
+            "mask_value",
+            torch.zeros(self.mask_dim) + mask_val,
+        )
 
         self.encoder = FeatureEncoder(dim_in, dim_inner, args.model)
         dim_in = self.encoder.dim_in
