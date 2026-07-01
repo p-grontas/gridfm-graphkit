@@ -1,3 +1,5 @@
+import copy
+
 from gridfm_graphkit.io.registries import MODELS_REGISTRY
 import torch
 from torch import nn
@@ -313,6 +315,10 @@ class GritHeteroAdapter(torch.nn.Module):
 
     def __init__(self, args):
         super().__init__()
+        # Work on a local copy to avoid mutating the shared config object,
+        # which would be a problem if multiple models are constructed from
+        # the same args (e.g. ensembles, teacher-student, A/B comparisons).
+        args = copy.deepcopy(args)
 
         dim_inner = args.model.hidden_size
         output_bus_dim = args.model.output_bus_dim
