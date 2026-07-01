@@ -49,7 +49,7 @@ def add_full_rrwp(
 
     # Compute D^{-1} A:
     deg = adj.sum(dim=1)
-    deg_inv = 1.0 / adj.sum(dim=1)
+    deg_inv = 1.0 / deg
     deg_inv[deg_inv == float("inf")] = 0
     adj = adj * deg_inv.view(-1, 1)
     adj = adj.to_dense()
@@ -148,7 +148,7 @@ def add_topk_rrwp(
 
     # Compute D^{-1} A:
     deg = adj.sum(dim=1)
-    deg_inv = 1.0 / adj.sum(dim=1)
+    deg_inv = 1.0 / deg
     deg_inv[deg_inv == float("inf")] = 0
     adj = adj * deg_inv.view(-1, 1)
     adj = adj.to_dense()

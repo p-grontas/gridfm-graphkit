@@ -164,7 +164,7 @@ class RRWPLinearEdgeEncoder(torch.nn.Module):
         self.fc = nn.Linear(emb_dim, out_dim, bias=use_bias)
         torch.nn.init.xavier_uniform_(self.fc.weight)
         self.pad_to_full_graph = pad_to_full_graph
-        self.fill_value = 0.0
+        self.fill_value = fill_value
 
         padding = torch.ones(1, out_dim, dtype=torch.float) * fill_value
         self.register_buffer("padding", padding)
