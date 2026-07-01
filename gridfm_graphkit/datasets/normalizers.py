@@ -20,6 +20,8 @@ from gridfm_graphkit.datasets.globals import (
     # Output feature indices
     PG_OUT,
     QG_OUT,
+    PD_OUT,
+    QD_OUT,
     PG_OUT_GEN,
     # Generator feature indices
     PG_H,
@@ -228,8 +230,14 @@ class HeteroDataMVANormalizer(Normalizer):
         data.edge_attr_dict[("bus", "connects", "bus")][:, ANG_MIN] *= torch.pi / 180.0
         data.edge_attr_dict[("bus", "connects", "bus")][:, ANG_MAX] *= torch.pi / 180.0
         data.edge_attr_dict[("bus", "connects", "bus")][:, RATE_A] /= self.baseMVA
-        data.baseMVA = torch.tensor(self.baseMVA, dtype=data.x_dict["bus"].dtype) # # needs to be float32 for MPS
-        data.is_normalized = torch.tensor(True, dtype=torch.bool) # needs to be bool for MPS
+        data.baseMVA = torch.tensor(
+            self.baseMVA,
+            dtype=data.x_dict["bus"].dtype,
+        )  # # needs to be float32 for MPS
+        data.is_normalized = torch.tensor(
+            True,
+            dtype=torch.bool,
+        )  # needs to be bool for MPS
 
     def inverse_transform(self, data: HeteroData):
         if self.baseMVA is None or self.baseMVA == 0:
@@ -299,13 +307,20 @@ class HeteroDataMVANormalizer(Normalizer):
         data.edge_attr_dict[("bus", "connects", "bus")][:, ANG_MAX] *= 180.0 / torch.pi
 
         data.edge_attr_dict[("bus", "connects", "bus")][:, RATE_A] *= self.baseMVA
-        data.is_normalized = torch.tensor(False, dtype=torch.bool) # needs to be bool for MPS
+        data.is_normalized = torch.tensor(
+            False,
+            dtype=torch.bool,
+        )  # needs to be bool for MPS
 
     def inverse_output(self, output, batch):
         bus_output = output["bus"]
         gen_output = output["gen"]
         bus_output[:, PG_OUT] *= self.baseMVA
         bus_output[:, QG_OUT] *= self.baseMVA
+        if bus_output.size(1) > PD_OUT:
+            bus_output[:, PD_OUT] *= self.baseMVA
+        if bus_output.size(1) > QD_OUT:
+            bus_output[:, QD_OUT] *= self.baseMVA
         gen_output[:, PG_OUT_GEN] *= self.baseMVA
 
     def get_stats(self) -> dict:
@@ -510,7 +525,10 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         data.edge_attr_dict[("bus", "connects", "bus")][:, ANG_MIN] *= torch.pi / 180.0
         data.edge_attr_dict[("bus", "connects", "bus")][:, ANG_MAX] *= torch.pi / 180.0
         data.edge_attr_dict[("bus", "connects", "bus")][:, RATE_A] /= e_b
-        data.is_normalized = torch.tensor(True, dtype=torch.bool) # needs to be bool for MPS
+        data.is_normalized = torch.tensor(
+            True,
+            dtype=torch.bool,
+        )  # needs to be bool for MPS
 
     def inverse_transform(self, data: HeteroData):
         """Undo per-unit normalization (multiply by baseMVA, inverse log1p for cost coeffs)."""
@@ -573,7 +591,10 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         data.edge_attr_dict[("bus", "connects", "bus")][:, ANG_MAX] *= 180.0 / torch.pi
 
         data.edge_attr_dict[("bus", "connects", "bus")][:, RATE_A] *= e_b
-        data.is_normalized = torch.tensor(False, dtype=torch.bool) # needs to be bool for MPS
+        data.is_normalized = torch.tensor(
+            False,
+            dtype=torch.bool,
+        )  # needs to be bool for MPS
 
     def inverse_output(self, output, batch):
         """
@@ -606,6 +627,10 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         # Scale per-unit power back to MW/Mvar
         bus_output[:, PG_OUT] *= b_bus
         bus_output[:, QG_OUT] *= b_bus
+        if bus_output.size(1) > PD_OUT:
+            bus_output[:, PD_OUT] *= b_bus
+        if bus_output.size(1) > QD_OUT:
+            bus_output[:, QD_OUT] *= b_bus
         gen_output[:, PG_OUT_GEN] *= b_gen
 
     def get_stats(self) -> dict:

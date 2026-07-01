@@ -26,13 +26,22 @@ def collect_metrics_from_log(log_base: str, metric_keys: list) -> dict:
     run_dirs = glob.glob(os.path.join(latest_exp_dir, "*"))
     assert len(run_dirs) > 0, f"No run directories found in {latest_exp_dir}"
     latest_run_dir = max(run_dirs, key=os.path.getmtime)
-    metrics_file = os.path.join(latest_run_dir, "artifacts", "test", "case14_ieee_metrics.csv")
+    metrics_file = os.path.join(
+        latest_run_dir,
+        "artifacts",
+        "test",
+        "case14_ieee_metrics.csv",
+    )
     assert os.path.exists(metrics_file), f"Metrics file not found: {metrics_file}"
     df = pd.read_csv(metrics_file)
     return dict(zip(df["Metric"], df["Value"].astype(float)))
 
 
-def print_calibration_stats(all_runs: list, metric_keys: list, confidence_interval: float = 0.995) -> None:
+def print_calibration_stats(
+    all_runs: list,
+    metric_keys: list,
+    confidence_interval: float = 0.995,
+) -> None:
     """
     Print per-metric stats across calibration runs:
       - std with Bessel's correction (ddof=1)
@@ -51,7 +60,9 @@ def print_calibration_stats(all_runs: list, metric_keys: list, confidence_interv
     ci_pct = f"{confidence_interval * 100:g}"
     col_w = max(len(k) for k in metric_keys) + 2
     header = f"  {'Metric':<{col_w}}  {'Mean':>10}  {'Std(ddof=1)':>12}  {f'CI {ci_pct}% lo':>10}  {f'CI {ci_pct}% hi':>10}"
-    print(f"\n===== Calibration Results (n={n}, CI={confidence_interval}, t_crit={t_crit:.4f}) =====")
+    print(
+        f"\n===== Calibration Results (n={n}, CI={confidence_interval}, t_crit={t_crit:.4f}) =====",
+    )
     print(header)
     print("  " + "-" * (len(header) - 2))
     for key in metric_keys:
@@ -65,7 +76,7 @@ def print_calibration_stats(all_runs: list, metric_keys: list, confidence_interv
         me = t_crit * std / np.sqrt(len(arr))  # margin of error
         lo, hi = mean - me, mean + me
         print(
-            f"  {key:<{col_w}}  {mean:>10.4f}  {std:>12.4f}  {lo:>10.4f}  {hi:>10.4f}"
+            f"  {key:<{col_w}}  {mean:>10.4f}  {std:>12.4f}  {lo:>10.4f}  {hi:>10.4f}",
         )
     print("=" * (len(header)) + "\n")
 
@@ -90,7 +101,9 @@ def prepare_training_config():
     with open(config_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
-    print(f"Training config updated: epochs set to {config['training']['epochs']}, hidden_size set to {config['model']['hidden_size']}")
+    print(
+        f"Training config updated: epochs set to {config['training']['epochs']}, hidden_size set to {config['model']['hidden_size']}",
+    )
 
     return config_path
 
@@ -115,7 +128,9 @@ def prepare_opf_training_config():
     with open(config_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
-    print(f"OPF training config updated: epochs set to {config['training']['epochs']}, hidden_size set to {config['model']['hidden_size']}")
+    print(
+        f"OPF training config updated: epochs set to {config['training']['epochs']}, hidden_size set to {config['model']['hidden_size']}",
+    )
 
     return config_path
 
@@ -211,7 +226,9 @@ def test_train_pf(cleanup_test_artifacts, calibrate_runs, ci_level):
     last_error = None
     for attempt in range(1, MAX_RETRIES + 1):
         if attempt > 1:
-            print(f"\n--- PF Retry attempt {attempt}/{MAX_RETRIES} after metric interval failure ---")
+            print(
+                f"\n--- PF Retry attempt {attempt}/{MAX_RETRIES} after metric interval failure ---",
+            )
             execute_and_live_output(
                 f"gridfm_graphkit train "
                 f"--config {training_config_path} "
@@ -231,7 +248,9 @@ def test_train_pf(cleanup_test_artifacts, calibrate_runs, ci_level):
             assert 0.2042 <= pbe_mean_value <= 0.6397, (
                 f"PBE Mean value {pbe_mean_value} is outside 95% CI [0.2042, 0.6397]"
             )
-            print(f"PBE Mean value {pbe_mean_value} is within 95% CI [0.2042, 0.6397] (attempt {attempt})")
+            print(
+                f"PBE Mean value {pbe_mean_value} is within 95% CI [0.2042, 0.6397] (attempt {attempt})",
+            )
             last_error = None
             break
         except AssertionError as e:
@@ -284,7 +303,9 @@ def test_train_opf(cleanup_opf_test_artifacts, calibrate_runs, ci_level):
     opf_data_dir = "data_out_opf"
 
     if not os.path.exists(opf_data_dir) or not os.listdir(opf_data_dir):
-        print("OPF data directory not found or empty, downloading pre-generated data...")
+        print(
+            "OPF data directory not found or empty, downloading pre-generated data...",
+        )
 
         gdrive_file_id = "1p5f5mRvmBQh8lZpIyWWbTbU42aHAIsdT"  # pragma: allowlist secret
         zip_filename = "case14_ieee.10000_scenarios_2_variants_opf.zip"
@@ -343,7 +364,9 @@ def test_train_opf(cleanup_opf_test_artifacts, calibrate_runs, ci_level):
     last_error = None
     for attempt in range(1, MAX_RETRIES + 1):
         if attempt > 1:
-            print(f"\n--- OPF Retry attempt {attempt}/{MAX_RETRIES} after metric interval failure ---")
+            print(
+                f"\n--- OPF Retry attempt {attempt}/{MAX_RETRIES} after metric interval failure ---",
+            )
             execute_and_live_output(
                 f"gridfm_graphkit train "
                 f"--config {training_config_path} "
@@ -360,12 +383,16 @@ def test_train_opf(cleanup_opf_test_artifacts, calibrate_runs, ci_level):
 
         try:
             for metric_name, (lo, hi) in checks.items():
-                assert metric_name in metrics, f"Metric '{metric_name}' not found in CSV"
+                assert metric_name in metrics, (
+                    f"Metric '{metric_name}' not found in CSV"
+                )
                 value = metrics[metric_name]
                 assert lo <= value <= hi, (
                     f"Metric '{metric_name}' value {value} is outside 99.5% CI [{lo}, {hi}]"
                 )
-                print(f"{metric_name}: {value} is within 99.5% CI [{lo}, {hi}] (attempt {attempt})")
+                print(
+                    f"{metric_name}: {value} is within 99.5% CI [{lo}, {hi}] (attempt {attempt})",
+                )
             last_error = None
             break
         except AssertionError as e:

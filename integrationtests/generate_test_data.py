@@ -29,7 +29,9 @@ def _base_config() -> dict:
     return config
 
 
-def generate_pf_test_data(config_path: str = "integrationtests/default_pf.yaml") -> None:
+def generate_pf_test_data(
+    config_path: str = "integrationtests/default_pf.yaml",
+) -> None:
     """
     Generate power-flow (PF) test data for case14_ieee with 10 000 scenarios
     and 2 topology variants.
@@ -42,12 +44,16 @@ def generate_pf_test_data(config_path: str = "integrationtests/default_pf.yaml")
     print(f"PF config written to {config_path}")
     print(f"  network.name                          : {config['network']['name']}")
     print(f"  load.scenarios                        : {config['load']['scenarios']}")
-    print(f"  topology_perturbation.n_topology_variants: {config['topology_perturbation']['n_topology_variants']}")
+    print(
+        f"  topology_perturbation.n_topology_variants: {config['topology_perturbation']['n_topology_variants']}",
+    )
 
     execute_and_live_output(f"gridfm_datakit generate {config_path}")
 
 
-def generate_opf_test_data(config_path: str = "integrationtests/default_opf.yaml") -> None:
+def generate_opf_test_data(
+    config_path: str = "integrationtests/default_opf.yaml",
+) -> None:
     """
     Generate optimal power-flow (OPF) test data for case14_ieee with 10 000 scenarios
     and 2 topology variants.
@@ -61,12 +67,14 @@ def generate_opf_test_data(config_path: str = "integrationtests/default_opf.yaml
     print(f"OPF config written to {config_path}")
     print(f"  network.name                          : {config['network']['name']}")
     print(f"  load.scenarios                        : {config['load']['scenarios']}")
-    print(f"  topology_perturbation.n_topology_variants: {config['topology_perturbation']['n_topology_variants']}")
+    print(
+        f"  topology_perturbation.n_topology_variants: {config['topology_perturbation']['n_topology_variants']}",
+    )
     print(f"  settings.mode                         : {config['settings']['mode']}")
 
     execute_and_live_output(f"gridfm_datakit generate {config_path}")
 
 
 if __name__ == "__main__":
-    #generate_pf_test_data()
+    # generate_pf_test_data()
     generate_opf_test_data()

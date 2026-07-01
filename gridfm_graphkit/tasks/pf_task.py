@@ -5,6 +5,8 @@ from gridfm_graphkit.datasets.globals import (
     QG_H,
     VM_H,
     VA_H,
+    # Generator feature indices
+    PG_H,
     MIN_VM_H,
     MAX_VM_H,
     MIN_QG_H,
@@ -26,7 +28,12 @@ from gridfm_graphkit.tasks.utils import (
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
-from torch_scatter import scatter_add
+
+try:
+    from torch_scatter import scatter_add
+except ImportError:
+    scatter_add = None
+
 from torch_geometric.nn import global_mean_pool
 from gridfm_graphkit.models.utils import (
     ComputeBranchFlow,
@@ -38,11 +45,75 @@ import os
 import pandas as pd
 
 
+def _build_bus_target(batch, num_bus):
+    """Build a 4-column bus-level target tensor [VM, VA, PG_agg, QG].
+
+    Generator PG is aggregated onto buses via scatter_add so that the
+    target layout matches the bus head output columns.
+    """
+    _, gen_to_bus_index = batch.edge_index_dict[("gen", "connected_to", "bus")]
+    agg_gen_on_bus = scatter_add(
+        batch.y_dict["gen"],
+        gen_to_bus_index,
+        dim=0,
+        dim_size=num_bus,
+    )
+    target = torch.stack(
+        [
+            batch.y_dict["bus"][:, VM_H],
+            batch.y_dict["bus"][:, VA_H],
+            agg_gen_on_bus.squeeze(),
+            batch.y_dict["bus"][:, QG_H],
+        ],
+        dim=1,
+    )
+    return target, gen_to_bus_index, agg_gen_on_bus
+
+
+def _clamp_known_to_ground_truth(output_bus, target, batch, gen_to_bus_index, num_bus):
+    """Replace predicted values with ground truth for known (unmasked) quantities.
+
+    During both training (PBELoss) and evaluation, the model is only
+    responsible for predicting masked unknowns.  Known quantities (e.g.
+    VM at PV buses, VA at REF, PG at non-slack generators) are clamped to
+    ground truth so that prediction errors on non-target outputs do not
+    pollute the power-balance residual.
+    """
+    mask_bus = batch.mask_dict["bus"]
+    eval_bus = output_bus.clone()
+    eval_bus[:, VM_OUT] = torch.where(
+        mask_bus[:, VM_H],
+        output_bus[:, VM_OUT],
+        target[:, VM_OUT],
+    )
+    eval_bus[:, VA_OUT] = torch.where(
+        mask_bus[:, VA_H],
+        output_bus[:, VA_OUT],
+        target[:, VA_OUT],
+    )
+    gen_pg_masked = batch.mask_dict["gen"][:, PG_H].float()
+    any_gen_masked = (
+        scatter_add(gen_pg_masked, gen_to_bus_index, dim=0, dim_size=num_bus) > 0
+    )
+    eval_bus[:, PG_OUT] = torch.where(
+        any_gen_masked,
+        output_bus[:, PG_OUT],
+        target[:, PG_OUT],
+    )
+    eval_bus[:, QG_OUT] = torch.where(
+        mask_bus[:, QG_H],
+        output_bus[:, QG_OUT],
+        target[:, QG_OUT],
+    )
+    return eval_bus
+
+
 @TASK_REGISTRY.register("PowerFlow")
 class PowerFlowTask(ReconstructionTask):
     """
-    Concrete Optimal Power Flow task.
-    Extends ReconstructionTask and adds OPF-specific metrics.
+    Concrete Power Flow task.
+    Extends ReconstructionTask and adds PF-specific evaluation metrics
+    (power balance residuals, per-bus-type RMSE).
     """
 
     def __init__(self, args, data_normalizers):
@@ -62,34 +133,22 @@ class PowerFlowTask(ReconstructionTask):
         num_bus = batch.x_dict["bus"].size(0)
         bus_edge_index = batch.edge_index_dict[("bus", "connects", "bus")]
         bus_edge_attr = batch.edge_attr_dict[("bus", "connects", "bus")]
-        _, gen_to_bus_index = batch.edge_index_dict[("gen", "connected_to", "bus")]
 
-        agg_gen_on_bus = scatter_add(
-            batch.y_dict["gen"],
+        target, gen_to_bus_index, agg_gen_on_bus = _build_bus_target(batch, num_bus)
+        eval_bus = _clamp_known_to_ground_truth(
+            output["bus"],
+            target,
+            batch,
             gen_to_bus_index,
-            dim=0,
-            dim_size=num_bus,
-        )
-        # output_agg = torch.cat([batch.y_dict["bus"], agg_gen_on_bus], dim=1)
-        target = torch.stack(
-            [
-                batch.y_dict["bus"][:, VM_H],
-                batch.y_dict["bus"][:, VA_H],
-                agg_gen_on_bus.squeeze(),
-                batch.y_dict["bus"][:, QG_H],
-            ],
-            dim=1,
+            num_bus,
         )
 
-        # UN-COMMENT THIS TO CHECK PBE ON GROUND TRUTH
-        # output["bus"] = target
-
-        Pft, Qft = branch_flow_layer(output["bus"], bus_edge_index, bus_edge_attr)
+        Pft, Qft = branch_flow_layer(eval_bus, bus_edge_index, bus_edge_attr)
         P_in, Q_in = node_injection_layer(Pft, Qft, bus_edge_index, num_bus)
         residual_P, residual_Q = node_residuals_layer(
             P_in,
             Q_in,
-            output["bus"],
+            eval_bus,
             batch.x_dict["bus"],
         )
 
@@ -170,18 +229,23 @@ class PowerFlowTask(ReconstructionTask):
 
         loss_dict["PBE Mean"] = pbe_mean.detach()
 
+        # Slice output to the 4 target columns [VM, VA, PG, QG] so that
+        # models with wider bus output (e.g. GRIT with output_bus_dim=6)
+        # are compared correctly against the 4-column target.
+        output_bus_metrics = output["bus"][:, [VM_OUT, VA_OUT, PG_OUT, QG_OUT]]
+
         mse_PQ = F.mse_loss(
-            output["bus"][mask_PQ],
+            output_bus_metrics[mask_PQ],
             target[mask_PQ],
             reduction="none",
         )
         mse_PV = F.mse_loss(
-            output["bus"][mask_PV],
+            output_bus_metrics[mask_PV],
             target[mask_PV],
             reduction="none",
         )
         mse_REF = F.mse_loss(
-            output["bus"][mask_REF],
+            output_bus_metrics[mask_REF],
             target[mask_REF],
             reduction="none",
         )
@@ -245,7 +309,7 @@ class PowerFlowTask(ReconstructionTask):
 
         # Only rank 0 proceeds with logging, CSV writing, and plotting
         if dist.is_available() and dist.is_initialized() and dist.get_rank() != 0:
-            self.test_outputs.clear() # clear the test outputs for other ranks
+            self.test_outputs.clear()  # clear the test outputs for other ranks
             return
 
         if isinstance(self.logger, MLFlowLogger):
@@ -356,25 +420,56 @@ class PowerFlowTask(ReconstructionTask):
         self.test_outputs.clear()
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        output, _ = self.shared_step(batch) # get the predicted output from the model
+        output, _ = self.shared_step(batch)  # get the predicted output from the model
 
-        self.data_normalizers[dataloader_idx].inverse_transform(batch) # normalize the batch data back to the original scale
-        self.data_normalizers[dataloader_idx].inverse_output(output, batch) # inverse transform the predicted output back to the original scale
+        self.data_normalizers[dataloader_idx].inverse_transform(
+            batch,
+        )  # normalize the batch data back to the original scale
+        self.data_normalizers[dataloader_idx].inverse_output(
+            output,
+            batch,
+        )  # inverse transform the predicted output back to the original scale
 
-        branch_flow_layer = ComputeBranchFlow() # layer to compute the branch flows
-        node_injection_layer = ComputeNodeInjection() # layer to compute the node injections
-        node_residuals_layer = ComputeNodeResiduals() # layer to compute the node residuals
+        branch_flow_layer = ComputeBranchFlow()  # layer to compute the branch flows
+        node_injection_layer = (
+            ComputeNodeInjection()
+        )  # layer to compute the node injections
+        node_residuals_layer = (
+            ComputeNodeResiduals()
+        )  # layer to compute the node residuals
 
-        num_bus = batch.x_dict["bus"].size(0) # number of buses in the batch
-        bus_edge_index = batch.edge_index_dict[("bus", "connects", "bus")] # from and to buses
-        bus_edge_attr = batch.edge_attr_dict[("bus", "connects", "bus")] # edge attributes (admittance) of the bus connections
+        num_bus = batch.x_dict["bus"].size(0)  # number of buses in the batch
+        bus_edge_index = batch.edge_index_dict[
+            ("bus", "connects", "bus")
+        ]  # from and to buses
+        bus_edge_attr = batch.edge_attr_dict[
+            ("bus", "connects", "bus")
+        ]  # edge attributes (admittance) of the bus connections
 
-        Pft, Qft = branch_flow_layer(output["bus"], bus_edge_index, bus_edge_attr) # compute the branch flows
-        P_in, Q_in = node_injection_layer(Pft, Qft, bus_edge_index, num_bus) # compute the node injections
-        residual_P, residual_Q = node_residuals_layer( # compute the node residuals
+        target, gen_to_bus_index, agg_gen_on_bus = _build_bus_target(batch, num_bus)
+        eval_bus = _clamp_known_to_ground_truth(
+            output["bus"],
+            target,
+            batch,
+            gen_to_bus_index,
+            num_bus,
+        )
+
+        Pft, Qft = branch_flow_layer(
+            eval_bus,
+            bus_edge_index,
+            bus_edge_attr,
+        )  # compute the branch flows
+        P_in, Q_in = node_injection_layer(
+            Pft,
+            Qft,
+            bus_edge_index,
+            num_bus,
+        )  # compute the node injections
+        residual_P, residual_Q = node_residuals_layer(  # compute the node residuals
             P_in,
             Q_in,
-            output["bus"],
+            eval_bus,
             batch.x_dict["bus"],
         )
         residual_P = torch.abs(residual_P)
@@ -388,7 +483,7 @@ class PowerFlowTask(ReconstructionTask):
                 torch.arange(c, device=bus_batch.device)
                 for c in torch.bincount(bus_batch)
             ],
-        ) # this is based on the assumptions that the buses within a graph are ordered and indexed as 0 ... n_nodes-1.
+        )  # this is based on the assumptions that the buses within a graph are ordered and indexed as 0 ... n_nodes-1.
         # todo: we should remove this assert and store the bus idx in the tensors
         # right now we need the increasing order and we have an assert in the dataset to check it.
         bus_x = batch.x_dict["bus"]
@@ -396,14 +491,6 @@ class PowerFlowTask(ReconstructionTask):
         mask_PQ = batch.mask_dict["PQ"]
         mask_PV = batch.mask_dict["PV"]
         mask_REF = batch.mask_dict["REF"]
-
-        _, gen_to_bus_index = batch.edge_index_dict[("gen", "connected_to", "bus")]
-        agg_gen_on_bus = scatter_add(
-            batch.y_dict["gen"],
-            gen_to_bus_index,
-            dim=0,
-            dim_size=num_bus,
-        )
 
         return {
             "scenario": scenario_ids.cpu().numpy(),

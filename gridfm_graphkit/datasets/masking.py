@@ -33,6 +33,60 @@ from torch_geometric.utils import degree
 from torch_geometric.nn import MessagePassing
 
 
+class AddRandomHeteroMask(BaseTransform):
+    """Creates random masks for self-supervised pretraining on heterogeneous power grid graphs.
+
+    Each selected feature dimension is independently masked per node/edge with
+    probability ``mask_ratio``.  Masked bus features: PD, QD, VM, VA, QG.
+    Masked gen features: PG.  Masked branch features: P_E, Q_E.
+
+    The output ``data.mask_dict`` has the same structure as the deterministic
+    PF / OPF masks so that downstream losses (``MaskedReconstructionMSE``,
+    ``PBELoss``, etc.) work without modification.
+    """
+
+    def __init__(self, mask_ratio=0.5):
+        super().__init__()
+        self.mask_ratio = mask_ratio
+
+    def forward(self, data):
+        bus_x = data.x_dict["bus"]
+        gen_x = data.x_dict["gen"]
+
+        # Bus type indicators (needed by losses and test metrics)
+        mask_PQ = bus_x[:, PQ_H] == 1
+        mask_PV = bus_x[:, PV_H] == 1
+        mask_REF = bus_x[:, REF_H] == 1
+
+        # Random bus mask on variable features the model reconstructs
+        mask_bus = torch.zeros_like(bus_x, dtype=torch.bool)
+        n_bus = bus_x.size(0)
+        for feat_idx in (PD_H, QD_H, VM_H, VA_H, QG_H):
+            mask_bus[:, feat_idx] = torch.rand(n_bus) < self.mask_ratio
+
+        # Random gen mask on PG
+        mask_gen = torch.zeros_like(gen_x, dtype=torch.bool)
+        mask_gen[:, PG_H] = torch.rand(gen_x.size(0)) < self.mask_ratio
+
+        # Random branch mask on flow features
+        branch_attr = data.edge_attr_dict[("bus", "connects", "bus")]
+        mask_branch = torch.zeros_like(branch_attr, dtype=torch.bool)
+        n_edge = branch_attr.size(0)
+        for feat_idx in (P_E, Q_E):
+            mask_branch[:, feat_idx] = torch.rand(n_edge) < self.mask_ratio
+
+        data.mask_dict = {
+            "bus": mask_bus,
+            "gen": mask_gen,
+            "branch": mask_branch,
+            "PQ": mask_PQ,
+            "PV": mask_PV,
+            "REF": mask_REF,
+        }
+
+        return data
+
+
 class AddPFHeteroMask(BaseTransform):
     """Creates masks for a heterogeneous power flow graph."""
 
@@ -158,6 +212,7 @@ class AddOPFHeteroMask(BaseTransform):
 
 class BusToGenBroadcaster(MessagePassing):
     """Broadcast per-bus values to connected generators via graph propagation."""
+
     def __init__(self, aggr="add"):
         super().__init__(aggr=aggr)
 
@@ -176,6 +231,7 @@ class BusToGenBroadcaster(MessagePassing):
 
 class SimulateMeasurements(BaseTransform):
     """Add configurable noise/outliers and masks to simulate measured quantities."""
+
     def __init__(self, args):
         super().__init__()
         self.measurements = args.task.measurements

@@ -162,14 +162,20 @@ class GNS_heterogeneous(nn.Module):
         # container for monitoring residual norms per layer and type
         self.layer_residuals = {}
 
-    def forward(self, x_dict, edge_index_dict, edge_attr_dict, mask_dict):
+    def forward(self, batch):
         """
-        x_dict: {"bus": Tensor[num_bus, bus_feat], "gen": Tensor[num_gen, gen_feat]}
-        edge_index_dict: keys like ("bus","connects","bus"), ("gen","connected_to","bus"), ("bus","connected_to","gen")
-        edge_attr_dict: same keys -> edge attributes (bus-bus requires G,B)
-        batch_dict: dict mapping node types to batch tensors (if using batching). Not used heavily here but kept for API parity.
-        mask: optional mask per node (applies when computing residuals)
+        Accepts a PyG HeteroData batch and extracts the required tensors.
+
+        batch: HeteroData/Batch containing:
+            x_dict: {"bus": Tensor[num_bus, bus_feat], "gen": Tensor[num_gen, gen_feat]}
+            edge_index_dict: keys like ("bus","connects","bus"), ("gen","connected_to","bus"), ("bus","connected_to","gen")
+            edge_attr_dict: same keys -> edge attributes (bus-bus requires G,B)
+            mask_dict: dict mapping node/bus types to mask tensors
         """
+        x_dict = batch.x_dict
+        edge_index_dict = batch.edge_index_dict
+        edge_attr_dict = batch.edge_attr_dict
+        mask_dict = batch.mask_dict
 
         self.layer_residuals = {}
 

@@ -44,6 +44,7 @@ dependencies = [
     "nbformat>=5.10.4",
     "networkx>=3.4.2",
     "numpy>=2.2.6",
+    "opt-einsum>=3.3.0",
     "pandas>=2.3.0",
     "plotly>=6.1.2",
     "pyyaml>=6.0.2",

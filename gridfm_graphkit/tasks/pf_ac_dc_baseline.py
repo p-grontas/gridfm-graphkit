@@ -4,10 +4,6 @@ import json
 import os
 import numpy as np
 import pandas as pd
-from gridfm_datakit.utils.power_balance import (
-    compute_branch_powers_vectorized,
-    compute_bus_balance,
-)
 
 N_SCENARIO_PER_PARTITION = 200
 NUM_PROCESSES = 64
@@ -134,6 +130,11 @@ def compute_pf_ac_dc_metrics(
     print(f"  Test split: {len(test_ids)} scenarios")
 
     bus_df, branch_df, runtime_df = _load_test_data(data_dir, test_ids)
+
+    from gridfm_datakit.utils.power_balance import (
+        compute_branch_powers_vectorized,
+        compute_bus_balance,
+    )
 
     # =========================
     # AC residuals

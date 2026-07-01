@@ -17,6 +17,15 @@ from gridfm_graphkit.datasets.utils import (
     split_from_existing_files,
 )
 from gridfm_graphkit.datasets.powergrid_hetero_dataset import HeteroGridDatasetDisk
+
+from gridfm_graphkit.datasets.posenc_stats import ComputePosencStat
+from gridfm_graphkit.datasets.cached_transform import (
+    CachedPosencTransform,
+    make_pe_cache_dir,
+)
+
+import torch_geometric.transforms as T
+
 import numpy as np
 import random
 import warnings
@@ -123,13 +132,18 @@ class LitGridHeteroDataModule(L.LightningDataModule):
         self._is_setup_done = False
 
         if self.split_by_load_scenario_idx:
-            assert self.split_from_existing_files is None, " either `split_by_load_scenario_idx` or `split_from_existing_files` may be used, not both"
+            assert self.split_from_existing_files is None, (
+                " either `split_by_load_scenario_idx` or `split_from_existing_files` may be used, not both"
+            )
 
         if self.split_from_existing_files is not None:
-            assert isinstance(self.split_from_existing_files, str), "`split_from_existing_files` must be an existing folder in string format"
+            assert isinstance(self.split_from_existing_files, str), (
+                "`split_from_existing_files` must be an existing folder in string format"
+            )
             self.split_from_existing_files = Path(self.split_from_existing_files)
-            assert self.split_from_existing_files.is_dir(), "`split_from_existing_files` must be an existing folder in string format"
-
+            assert self.split_from_existing_files.is_dir(), (
+                "`split_from_existing_files` must be an existing folder in string format"
+            )
 
     def setup(self, stage: str):
         if self._is_setup_done:
@@ -173,6 +187,44 @@ class LitGridHeteroDataModule(L.LightningDataModule):
                     transform=get_task_transforms(args=self.args),
                 )
 
+            if ("posenc_RRWP" in self.args.data) and self.args.data.posenc_RRWP.enable:
+                pe_transform = ComputePosencStat(pe_types=["RRWP"], cfg=self.args.data)
+                if getattr(self.args.data.posenc_RRWP, "cache", False):
+                    cache_dir = make_pe_cache_dir(
+                        dataset.processed_dir,
+                        "RRWP",
+                        self.args.data,
+                    )
+                    pe_transform = CachedPosencTransform(
+                        pe_transform,
+                        cache_dir,
+                        cached_attrs=["rrwp", "log_deg", "deg"],
+                        cached_edge_type=("bus", "rrwp", "bus"),
+                        key_attr="topology",
+                    )
+                if dataset.transform is None:
+                    dataset.transform = pe_transform
+                else:
+                    dataset.transform = T.Compose([pe_transform, dataset.transform])
+            if ("posenc_RWSE" in self.args.data) and self.args.data.posenc_RWSE.enable:
+                pe_transform = ComputePosencStat(pe_types=["RWSE"], cfg=self.args.data)
+                if getattr(self.args.data.posenc_RWSE, "cache", False):
+                    cache_dir = make_pe_cache_dir(
+                        dataset.processed_dir,
+                        "RWSE",
+                        self.args.data,
+                    )
+                    pe_transform = CachedPosencTransform(
+                        pe_transform,
+                        cache_dir,
+                        cached_attrs=["pestat_RWSE"],
+                        key_attr="topology",
+                    )
+                if dataset.transform is None:
+                    dataset.transform = pe_transform
+                else:
+                    dataset.transform = T.Compose([pe_transform, dataset.transform])
+
             self.datasets.append(dataset)
 
             num_scenarios = self.args.data.scenarios[i]
@@ -185,7 +237,6 @@ class LitGridHeteroDataModule(L.LightningDataModule):
 
             # Create a subset
             all_indices = list(range(len(dataset)))
-
 
             if self.split_from_existing_files is not None:
                 warnings.warn(
@@ -231,13 +282,14 @@ class LitGridHeteroDataModule(L.LightningDataModule):
                     # load_scenario for each scenario in the subset
                     load_scenarios = dataset.load_scenarios[subset_indices]
 
-
                 dataset = Subset(dataset, subset_indices)
-                
+
                 if self.dataset_wrapper is not None:
                     wrapper_cls = DATASET_WRAPPER_REGISTRY.get(self.dataset_wrapper)
-                    dataset = wrapper_cls(dataset, cache_dir=self.dataset_wrapper_cache_dir)
-
+                    dataset = wrapper_cls(
+                        dataset,
+                        cache_dir=self.dataset_wrapper_cache_dir,
+                    )
 
                 # Random seed set before every split, same as above
                 np.random.seed(self.args.seed)
@@ -432,7 +484,12 @@ class LitGridHeteroDataModule(L.LightningDataModule):
         return kwargs
 
     def train_dataloader(self):
-        print("creating train dataloader for rank ", dist.get_rank() if dist.is_available() and dist.is_initialized() else "not distributed")
+        print(
+            "creating train dataloader for rank ",
+            dist.get_rank()
+            if dist.is_available() and dist.is_initialized()
+            else "not distributed",
+        )
         return DataLoader(
             self.train_dataset_multi,
             batch_size=self.batch_size,

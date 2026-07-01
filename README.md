@@ -43,6 +43,7 @@ TORCH_CUDA_VERSION=$(python -c "import torch; print(torch.__version__ + ('+cpu' 
 Install the correct torch-scatter wheel
 ```bash
 pip install torch-scatter -f https://data.pyg.org/whl/torch-${TORCH_CUDA_VERSION}.html
+pip install torch-sparse -f https://data.pyg.org/whl/torch-${TORCH_CUDA_VERSION}.html
 ```
 
 
