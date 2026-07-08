@@ -141,6 +141,19 @@ def main():
             "Requires CUBLAS_WORKSPACE_CONFIG to be set (e.g. ':4096:8') for CUDA>=10.2."
         ),
     )
+    _monitor_kwargs = dict(
+        dest="monitor",
+        type=str,
+        default=None,
+        help="Logged validation metric to monitor for early stopping, best-model saving, and checkpointing (e.g. 'Validation PBE Mean'). Defaults to 'Validation loss'.",
+    )
+    _monitor_mode_kwargs = dict(
+        dest="monitor_mode",
+        type=str,
+        default=None,
+        choices=["min", "max"],
+        help="Whether a lower ('min') or higher ('max') value of --monitor is better. Defaults to 'min'.",
+    )
     _mp_context_kwargs = dict(
         dest="mp_context",
         type=str,
@@ -209,6 +222,8 @@ def main():
     )
     train_parser.add_argument("--mp_context", **_mp_context_kwargs)
     train_parser.add_argument("--deterministic", **_deterministic_kwargs)
+    train_parser.add_argument("--monitor", **_monitor_kwargs)
+    train_parser.add_argument("--monitor_mode", **_monitor_mode_kwargs)
 
     # ---- FINETUNE SUBCOMMAND ----
     finetune_parser = subparsers.add_parser("finetune", help="Run fine-tuning")
@@ -263,6 +278,8 @@ def main():
         help="Print the last training epoch time and a single test metric to stdout.",
     )
     finetune_parser.add_argument("--mp_context", **_mp_context_kwargs)
+    finetune_parser.add_argument("--monitor", **_monitor_kwargs)
+    finetune_parser.add_argument("--monitor_mode", **_monitor_mode_kwargs)
 
     # ---- EVALUATE SUBCOMMAND ----
     evaluate_parser = subparsers.add_parser(

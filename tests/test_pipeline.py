@@ -43,6 +43,8 @@ def parser():
         sp.add_argument("--model_path")
         sp.add_argument("--exp_name")
         sp.add_argument("--run_name")
+        sp.add_argument("--monitor")
+        sp.add_argument("--monitor_mode")
 
     return parser
 
@@ -68,6 +70,10 @@ def test_cli_commands(parser, config, command):
         EXP_NAME,
         "--run_name",
         RUN_NAME,
+        "--monitor",
+        "Validation loss",
+        "--monitor_mode",
+        "min",
     ]
 
     if command in ["finetune", "evaluate"]:
@@ -100,6 +106,10 @@ def test_entrypoint_train(config):
         EXP_NAME,
         "--run_name",
         RUN_NAME,
+        "--monitor",
+        "Validation loss",
+        "--monitor_mode",
+        "min",
     ]
 
     with mock.patch.object(sys, "argv", test_argv):

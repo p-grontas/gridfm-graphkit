@@ -25,6 +25,11 @@ from lightning.pytorch.strategies import DDPStrategy
 import lightning as L
 
 
+# Default metric and direction
+DEFAULT_MONITOR = "Validation loss"
+DEFAULT_MONITOR_MODE = "min"
+
+
 def _normalize_loaded_state_dict_keys(
     state_dict: dict[str, torch.Tensor],
 ) -> dict[str, torch.Tensor]:
@@ -128,25 +133,33 @@ def benchmark_cli(args):
         print(f"\nAverage over {args.epochs} epochs: {avg:.3f}s")
 
 
-def get_training_callbacks(args):
-    """Build the standard callback stack used for train/finetune runs."""
+def get_training_callbacks(args, monitor=DEFAULT_MONITOR, mode=DEFAULT_MONITOR_MODE):
+    """Build the standard callback stack used for train/finetune runs.
+
+    Args:
+        args: config namespace providing ``callbacks.tol`` and ``callbacks.patience``.
+        monitor: name of the logged metric that early stopping, best-model saving,
+            and checkpointing all track. Defaults to ``"Validation loss"``.
+        mode: ``"min"`` or ``"max"`` — whether a lower or higher value of *monitor*
+            is considered better.
+    """
     early_stop_callback = EarlyStopping(
-        monitor="Validation loss",
+        monitor=monitor,
         min_delta=args.callbacks.tol,
         patience=args.callbacks.patience,
         verbose=False,
-        mode="min",
+        mode=mode,
     )
 
     save_best_model_callback = SaveBestModelStateDict(
-        monitor="Validation loss",
-        mode="min",
+        monitor=monitor,
+        mode=mode,
         filename="best_model_state_dict.pt",
     )
 
     checkpoint_callback = ModelCheckpoint(
-        monitor="Validation loss",  # or whichever metric you track
-        mode="min",
+        monitor=monitor,
+        mode=mode,
         save_last=True,
         save_top_k=0,
     )
@@ -233,7 +246,13 @@ def main_cli(args):
     report_performance = getattr(args, "report_performance", False)
     epoch_timer = EpochTimerCallback() if report_performance else None
 
-    training_callbacks = get_training_callbacks(config_args)
+    monitor_metric = getattr(args, "monitor", None) or DEFAULT_MONITOR
+    monitor_mode = getattr(args, "monitor_mode", None) or DEFAULT_MONITOR_MODE
+    training_callbacks = get_training_callbacks(
+        config_args,
+        monitor=monitor_metric,
+        mode=monitor_mode,
+    )
     if epoch_timer is not None:
         training_callbacks = training_callbacks + [epoch_timer]
 
@@ -263,7 +282,8 @@ def main_cli(args):
         max_epochs=config_args.training.epochs,
         callbacks=training_callbacks,
         deterministic=(
-            True if getattr(args, "deterministic", None) == "true"
+            True
+            if getattr(args, "deterministic", None) == "true"
             else (getattr(args, "deterministic", None) or False)
         ),
         **trainer_kwargs,

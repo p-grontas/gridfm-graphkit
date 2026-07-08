@@ -67,7 +67,17 @@ class SaveBestModelStateDict(Callback):
     def on_validation_end(self, trainer, pl_module):
         current = trainer.callback_metrics.get(self.monitor)
         if current is None:
-            return  # Metric not available yet
+            # A sanity-check validation pass runs before training starts and
+            # has no logged metrics yet; skip it. Once training has begun, a
+            # missing metric means the monitor name is wrong, so fail loudly
+            # with the list of metrics that are actually available.
+            if trainer.sanity_checking:
+                return
+            available = sorted(trainer.callback_metrics.keys())
+            raise KeyError(
+                f"Monitored metric '{self.monitor}' is not available. "
+                f"Available metrics: {available}.",
+            )
 
         # Check if this is the best score so far
         if (self.mode == "min" and current < self.best_score) or (
