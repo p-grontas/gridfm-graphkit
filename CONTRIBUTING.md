@@ -118,6 +118,7 @@ Before opening a PR, make sure you complete all steps:
   ```bash
   TORCH_CUDA_VERSION=$(python -c "import torch; print(torch.__version__ + ('+cpu' if torch.version.cuda is None else ''))")
   pip install torch-scatter -f https://data.pyg.org/whl/torch-${TORCH_CUDA_VERSION}.html
+  pip install torch-sparse -f https://data.pyg.org/whl/torch-${TORCH_CUDA_VERSION}.html
   ```
 
 * [ ] Install the git hooks (this repo runs pre-commit hooks at the **pre-push** stage):
