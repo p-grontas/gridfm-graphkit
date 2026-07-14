@@ -160,6 +160,7 @@ Before opening a PR, make sure you complete all steps:
   ```bash
   MLFLOW_ALLOW_FILE_STORE=true pytest tests/
   ```
+* [ ] Run integration tests, see [Running the Integration Tests](#running-the-integration-tests).
 
 ### 6. Pre-commit & linting
 
