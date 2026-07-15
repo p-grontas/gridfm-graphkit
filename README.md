@@ -46,6 +46,14 @@ pip install torch-scatter -f https://data.pyg.org/whl/torch-${TORCH_CUDA_VERSION
 pip install torch-sparse -f https://data.pyg.org/whl/torch-${TORCH_CUDA_VERSION}.html
 ```
 
+If `data.pyg.org` has no prebuilt wheel for your PyTorch version, build from source instead (this
+compiles against your installed torch, so it works with any version):
+```bash
+pip install torch-scatter torch-sparse --no-build-isolation
+```
+Building from source requires a C++ compiler (and a matching CUDA toolkit with
+`nvcc` for GPU builds).
+
 
 For documentation generation and unit testing, install with the optional `dev` and `test` extras:
 
