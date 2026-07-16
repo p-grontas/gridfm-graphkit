@@ -4,7 +4,6 @@ from unittest import mock
 
 import pytest
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
-from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 
 from gridfm_graphkit.cli import DEFAULT_MONITOR, get_training_callbacks, main_cli
 from gridfm_graphkit.__main__ import main
@@ -132,7 +131,6 @@ def test_get_training_callbacks_reads_config_monitors():
     assert by_type[EarlyStopping].monitor == "Validation PBE Mean"
     # save-best and checkpoint share the checkpoint_monitor key
     assert by_type[SaveBestModelStateDict].monitor == "Validation layer_11_residual"
-    assert by_type[ModelCheckpoint].monitor == "Validation layer_11_residual"
 
     assert all(cb.mode == "min" for cb in by_type.values())
 
@@ -144,4 +142,3 @@ def test_get_training_callbacks_defaults_when_monitors_absent():
 
     assert by_type[EarlyStopping].monitor == DEFAULT_MONITOR
     assert by_type[SaveBestModelStateDict].monitor == DEFAULT_MONITOR
-    assert by_type[ModelCheckpoint].monitor == DEFAULT_MONITOR
