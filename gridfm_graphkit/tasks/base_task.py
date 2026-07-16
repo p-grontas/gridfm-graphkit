@@ -117,6 +117,11 @@ class BaseTask(L.LightningModule, ABC):
             lr=self.args.optimizer.learning_rate,
             betas=(self.args.optimizer.beta1, self.args.optimizer.beta2),
         )
+        lr_scheduler_monitor = getattr(
+            self.args.callbacks,
+            "lr_scheduler_monitor",
+            "Validation loss",
+        )
         self.scheduler = ReduceLROnPlateau(
             self.optimizer,
             mode="min",
@@ -127,7 +132,7 @@ class BaseTask(L.LightningModule, ABC):
             "optimizer": self.optimizer,
             "lr_scheduler": {
                 "scheduler": self.scheduler,
-                "monitor": "Validation loss",
+                "monitor": lr_scheduler_monitor,
                 "reduce_on_plateau": True,
             },
         }

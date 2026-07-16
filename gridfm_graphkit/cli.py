@@ -25,9 +25,9 @@ from lightning.pytorch.strategies import DDPStrategy
 import lightning as L
 
 
-# Default metric and direction
+# Default monitored metric used when a config omits an explicit monitor key.
+# The monitor direction is always "min" (lower is better) and is not configurable.
 DEFAULT_MONITOR = "Validation loss"
-DEFAULT_MONITOR_MODE = "min"
 
 
 def _normalize_loaded_state_dict_keys(
@@ -133,33 +133,37 @@ def benchmark_cli(args):
         print(f"\nAverage over {args.epochs} epochs: {avg:.3f}s")
 
 
-def get_training_callbacks(args, monitor=DEFAULT_MONITOR, mode=DEFAULT_MONITOR_MODE):
+def get_training_callbacks(args):
     """Build the standard callback stack used for train/finetune runs.
 
     Args:
-        args: config namespace providing ``callbacks.tol`` and ``callbacks.patience``.
-        monitor: name of the logged metric that early stopping, best-model saving,
-            and checkpointing all track. Defaults to ``"Validation loss"``.
-        mode: ``"min"`` or ``"max"`` — whether a lower or higher value of *monitor*
-            is considered better.
+        args: config namespace providing ``callbacks.tol``, ``callbacks.patience``
+            and the optional monitor keys above.
     """
+    early_stopping_monitor = getattr(
+        args.callbacks,
+        "early_stopping_monitor",
+        DEFAULT_MONITOR,
+    )
+    checkpoint_monitor = getattr(args.callbacks, "checkpoint_monitor", DEFAULT_MONITOR)
+
     early_stop_callback = EarlyStopping(
-        monitor=monitor,
+        monitor=early_stopping_monitor,
         min_delta=args.callbacks.tol,
         patience=args.callbacks.patience,
         verbose=False,
-        mode=mode,
+        mode="min",
     )
 
     save_best_model_callback = SaveBestModelStateDict(
-        monitor=monitor,
-        mode=mode,
+        monitor=checkpoint_monitor,
+        mode="min",
         filename="best_model_state_dict.pt",
     )
 
     checkpoint_callback = ModelCheckpoint(
-        monitor=monitor,
-        mode=mode,
+        monitor=checkpoint_monitor,
+        mode="min",
         save_last=True,
         save_top_k=0,
     )
@@ -246,13 +250,7 @@ def main_cli(args):
     report_performance = getattr(args, "report_performance", False)
     epoch_timer = EpochTimerCallback() if report_performance else None
 
-    monitor_metric = getattr(args, "monitor", None) or DEFAULT_MONITOR
-    monitor_mode = getattr(args, "monitor_mode", None) or DEFAULT_MONITOR_MODE
-    training_callbacks = get_training_callbacks(
-        config_args,
-        monitor=monitor_metric,
-        mode=monitor_mode,
-    )
+    training_callbacks = get_training_callbacks(config_args)
     if epoch_timer is not None:
         training_callbacks = training_callbacks + [epoch_timer]
 

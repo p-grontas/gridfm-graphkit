@@ -104,9 +104,6 @@ gridfm_graphkit train --config path/to/config.yaml
 | `--profiler` | `str` | Enable Lightning profiler (`simple`, `advanced`, `pytorch`). | `None` |
 | `--compute_dc_ac_metrics` | `flag` | Compute ground-truth AC/DC power balance metrics on the test split. | `False` |
 | `--mp_context` | `str` | DataLoader multiprocessing start method (`spawn`, `fork`, `forkserver`). Defaults to PyTorch's automatic choice. On Linux, `spawn` is recommended for safety (CUDA + fork is unsafe); other choices emit a warning. | `None` |
-| `--monitor` | `str` | Logged validation metric to monitor for early stopping, best-model saving, and checkpointing, e.g. `Validation PBE Mean`. If it never matches a logged metric, training aborts after the first validation epoch. | `Validation loss` |
-| `--monitor_mode` | `str` | Whether a lower (`min`) or higher (`max`) value of `--monitor` is better. | `min` |
-
 ### Examples
 
 **Standard Training:**
@@ -143,9 +140,6 @@ gridfm_graphkit finetune --config path/to/config.yaml --model_path path/to/model
 | `--profiler` | `str` | Enable Lightning profiler (`simple`, `advanced`, `pytorch`). | `None` |
 | `--compute_dc_ac_metrics` | `flag` | Compute ground-truth AC/DC power balance metrics on the test split. | `False` |
 | `--mp_context` | `str` | DataLoader multiprocessing start method (`spawn`, `fork`, `forkserver`). Defaults to PyTorch's automatic choice. On Linux, `spawn` is recommended for safety (CUDA + fork is unsafe); other choices emit a warning. | `None` |
-| `--monitor` | `str` | Logged validation metric to monitor for early stopping, best-model saving, and checkpointing, e.g. `Validation PBE Mean`. If it never matches a logged metric, training aborts after the first validation epoch. | `Validation loss` |
-| `--monitor_mode` | `str` | Whether a lower (`min`) or higher (`max`) value of `--monitor` is better. | `min` |
-
 
 ---
 
