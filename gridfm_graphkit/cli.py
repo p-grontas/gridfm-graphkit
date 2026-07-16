@@ -149,6 +149,7 @@ def get_training_callbacks(args):
         patience=args.callbacks.patience,
         verbose=False,
         mode="min",
+        strict=True,
     )
 
     save_best_model_callback = SaveBestModelStateDict(
@@ -158,8 +159,6 @@ def get_training_callbacks(args):
     )
 
     checkpoint_callback = ModelCheckpoint(
-        monitor=checkpoint_monitor,
-        mode="min",
         save_last=True,
         save_top_k=0,
     )

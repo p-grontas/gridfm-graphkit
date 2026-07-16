@@ -136,5 +136,6 @@ class BaseTask(L.LightningModule, ABC):
                 "scheduler": self.scheduler,
                 "monitor": lr_scheduler_monitor,
                 "reduce_on_plateau": True,
+                "strict": True,
             },
         }
