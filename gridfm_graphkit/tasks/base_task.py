@@ -7,6 +7,8 @@ from lightning.pytorch.loggers import MLFlowLogger
 import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
+from gridfm_graphkit.training.callbacks import DEFAULT_MONITOR
+
 
 class BaseTask(L.LightningModule, ABC):
     """
@@ -120,7 +122,7 @@ class BaseTask(L.LightningModule, ABC):
         lr_scheduler_monitor = getattr(
             self.args.callbacks,
             "lr_scheduler_monitor",
-            "Validation loss",
+            DEFAULT_MONITOR,
         )
         self.scheduler = ReduceLROnPlateau(
             self.optimizer,

@@ -6,6 +6,11 @@ import time
 import torch
 
 
+# Default monitored metric used when a config omits an explicit monitor key.
+# The monitor direction is always "min" (lower is better) and is not configurable.
+DEFAULT_MONITOR = "Validation loss"
+
+
 class EpochTimerCallback(Callback):
     """Records wall-clock duration and iteration rate of every training epoch."""
 

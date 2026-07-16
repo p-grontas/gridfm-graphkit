@@ -195,5 +195,5 @@ The hooks run automatically on `git push`. To run them manually before pushing:
 
 * [ ] **Rebase your branch onto the latest `main` before opening a PR.**
 * [ ] **Sign off all commits** with the Developer Certificate of Origin (`git commit -s`). See [Developer Certificate of Origin signoff].
-* [ ] Open a PR with a short description of your changes and add Alban Puech as a reviewer.
+* [ ] Open a PR with a short description of your changes.
 * [ ] Ensure code, tests, and documentation are clear and complete.

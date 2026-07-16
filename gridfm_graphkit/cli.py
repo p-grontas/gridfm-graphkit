@@ -2,6 +2,7 @@ from gridfm_graphkit.datasets.hetero_powergrid_datamodule import LitGridHeteroDa
 from gridfm_graphkit.io.param_handler import NestedNamespace
 from gridfm_graphkit.io.registries import DATASET_WRAPPER_REGISTRY
 from gridfm_graphkit.training.callbacks import (
+    DEFAULT_MONITOR,
     SaveBestModelStateDict,
     EpochTimerCallback,
 )
@@ -23,11 +24,6 @@ from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import MLFlowLogger
 from lightning.pytorch.strategies import DDPStrategy
 import lightning as L
-
-
-# Default monitored metric used when a config omits an explicit monitor key.
-# The monitor direction is always "min" (lower is better) and is not configurable.
-DEFAULT_MONITOR = "Validation loss"
 
 
 def _normalize_loaded_state_dict_keys(
